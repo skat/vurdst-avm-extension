@@ -1,0 +1,501 @@
+---
+title: ""
+author: "August E. G. Mikkelsen"
+date: "2025-07-21"
+output: pdf_document
+header-includes:
+  - \usepackage{xcolor}
+---
+
+```{r setup,  eval=TRUE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(stringr)
+library(future)
+library(purrr)
+
+if (!dir.exists("saved_files")) {
+    dir.create("saved_files", recursive = TRUE)
+} 
+
+
+#preprocessing uses some scripts from Vurdsts official model code. Here one needs to specify their location in ones own folder structure. 
+if (!requireNamespace("konstant", quietly = TRUE)) {
+  devtools::install(konstant_path, upgrade = "never")
+}
+
+if (!requireNamespace("core", quietly = TRUE)) {
+  devtools::install(core_path, upgrade = "never")
+}
+library(konstant)
+library(core)
+
+
+
+# Global parameters
+future::plan(list(future::tweak(multisession, workers = 30)))
+load <- FALSE 
+antag_historik <- TRUE
+variable <- c("salg_id_ice",
+              "vurderingsejendom_id_ice",
+              "delgrund.delgrund_ids",
+              "enhed.enhed_id_ice",
+              "df_virkningstid",
+              "region_nr",
+              "region_navn",
+              "landsdel_nr",
+              "landsdel_navn",
+              "kommune_navn",
+              "kommunetype",
+              "salg.koebsdato",
+              "salg.ialtkoebesum",
+              "salg.ejendomkategori",
+              "salg_flag",
+              "salg.anmeldelseidentifikator",
+              "salg.flereejendommeindikator",
+              "delgrund.registeret_areal_uden_vej",
+              "delgrund.zone",
+              "bygning.bygning_id_ice",
+              "bygning.opfoerelsesaar",
+              "bygning.omtilbygningsaar",
+              "bygning.tagdaekningsmateriale",
+              "bygning.supltagdaekningsmateriale",
+              "bygning.ydervaeggensmateriale",
+              "bygning.suplydervaeggensmateriale",
+              "bygning.varmeinstallation",
+              "bygning.supplerendevarme",
+              "bygning.bygningsanvendelse",
+              "bygning.samlet_boligareal",
+              "bygning.samletbygningsareal",
+              "bygning.samlet_erhvervsareal",
+              "bygning.andetareal",
+              "bygning.antal_etager",
+              "bygning.bebyggetareal",
+              "bygning.ejerforholdskode",
+              "vurinfo.vurderingsejendom_id",
+              "vurinfo.kommunenummer",
+              "vurinfo.ejendomsnummer",
+              "vurinfo.adresse.koordinatoest",
+              "vurinfo.adresse.koordinatnord",
+              "vurinfo.registreretareal_fratrukket_vejareal",
+              "vurinfo.afstand_kyst",
+              "vurinfo.afstand_naermeste_trafikvejgennemfart_trafikfordeling",
+              "vurinfo.afstand_motorvej_motortrafikvej",
+              "vurinfo.afstand_stor_soe",
+              "vurinfo.areal_samlet_skov",
+              "vurinfo.afstand_jernbane_any",
+              "vurinfo.afstand_stort_vandloeb",
+              "vurinfo.afstand_vindmoelle_any",
+              "vurinfo.afstand_station_any",
+              "vurinfo.udsigtslaengde_hav",
+              "vurinfo.udsigtslaengde_soe",
+              "vurinfo.oe_beliggenhed",
+              "vurinfo.vurbenyttelseskode",
+              "vurinfo.antal_delgrunde",
+              "vurinfo.antal_enheder",
+              "enhed.areal_til_beboelse",
+              "enhed.areal_til_erhverv",
+              "enhed.andetareal",
+              "enhed.boligtype",
+              "enhed.enhedsanvendelse",
+              "enhed.antal_badevaerelser",
+              "enhed.antal_vaerelser",
+              "enhed.antal_vaerelser_til_erhverv",
+              "enhed.antal_vandskylledetoiletter",
+              "enhed.badeforhold",
+              "enhed.koekkenforhold",
+              "enhed.opvarmningsmiddel",
+              "enhed.varmeinstallation",
+              "enhed.toiletforhold",
+              "enhed.supplerendevarme")
+
+```
+
+# Beskrivelse
+Her gennemgås step-by-step processen til at generere det endelige datasæt anvendt i modellerne. 
+
+
+## 1. Load data
+
+```{r Load dataset,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+if (load) {
+  
+  ejendomssalg <- readRDS("saved_files/ejendomssalg.rds")
+  vurderingsejendomme <- readRDS("saved_files/vurderingsejendomme.rds")
+
+  
+} else {
+  
+  ### 1. Hent ejendomssalg
+  
+  #2020
+  chunks <- list.files(path = "/data/data/premodeldataflow/20250613_vuraar2020//",
+                       pattern = "salg.ndjson.xz",
+                       recursive = TRUE,
+                       full.names = TRUE)
+  
+
+  markedsdata <- furrr::future_map_dfr(chunks,
+                        function(x) x %>%
+                        indlaes_vurderingsejendomme(trim = TRUE,
+                                                    salgsdata = TRUE))
+
+
+  enheder <- udtraek_nestede_elementer(data = markedsdata,
+                                       list_col = "vurderingsenheder",
+                                       subelementer = "enhed",
+                                       keep_cols = "salg_id_ice")
+
+  vurinfo <- udtraek_element(data = markedsdata,
+                             col = "vurinfo")
+
+  vurinfo[["salg_flag"]] <- map_chr(
+    .x = vurinfo[["salg.salg_flag"]],
+    .f = function(x){
+      paste(x[["flag_rule_id"]], collapse = ",")
+    })
+    
+
+  ejendomssalg_2020 <- left_join(x = enheder,
+                                 y = vurinfo,
+                                 by = c("salg_id_ice",
+                                        "vurderingsejendom_id_ice",
+                                        "df_virkningstid"))
+                                
+  
+  #2024
+  
+  chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024//",
+                       pattern = "salg.ndjson.xz",
+                       recursive = TRUE,
+                       full.names = TRUE)
+
+
+  markedsdata <- furrr::future_map_dfr(chunks,
+                        function(x) x %>%
+                        indlaes_vurderingsejendomme(trim = TRUE,
+                                                    salgsdata = TRUE))
+
+
+  enheder <- udtraek_nestede_elementer(data = markedsdata,
+                                       list_col = "vurderingsenheder",
+                                       subelementer = "enhed",
+                                       keep_cols = "salg_id_ice")
+
+  vurinfo <- udtraek_element(data = markedsdata,
+                             col = "vurinfo")
+
+  vurinfo[["salg_flag"]] <- map_chr(
+    .x = vurinfo[["salg.salg_flag"]],
+    .f = function(x){
+      paste(x[["flag_rule_id"]], collapse = ",")
+    }
+  )
+
+  ejendomssalg_2024 <- left_join(x = enheder,
+                                 y = vurinfo,
+                                 by = c("salg_id_ice",
+                                        "vurderingsejendom_id_ice",
+                                        "df_virkningstid"))
+    
+  #saml ejendomssalg og select relevante felter
+    
+  ejendomssalg <- bind_rows(ejendomssalg_2020, ejendomssalg_2024) %>%
+                  distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, salg.koebsdato, .keep_all = TRUE) %>%
+                  select(any_of(variable))
+  
+  saveRDS(ejendomssalg, "saved_files/ejendomssalg.rds")
+  
+  #fjern fra memory
+  rm(markedsdata, enheder, vurinfo, ejendomssalg_2020, ejendomssalg_2024)
+
+  
+  ### 2. Hent vurderingsejendomme (anvendes til at antage historik)
+  
+  chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024/",
+                       pattern = "vurderingsejendomme.ndjson.xz",
+                       recursive = TRUE,
+                       full.names = TRUE)
+  
+
+
+  vurderingsejendomme <- furrr::future_map_dfr(chunks,
+                                function(x) x %>%
+                                indlaes_vurderingsejendomme(trim = TRUE,
+                                                            salgsdata = FALSE))
+
+
+  enheder <- udtraek_nestede_elementer(data = vurderingsejendomme,
+                                       list_col = "vurderingsenheder",
+                                       subelementer = "enhed")
+
+
+  vurinfo <- udtraek_element(data = vurderingsejendomme, 
+                             col = "vurinfo")
+    
+    
+  vurderingsejendomme <- left_join(x = enheder,
+                                   y = vurinfo,
+                                   by = c("vurderingsejendom_id_ice",
+                                          "df_virkningstid"))
+
+  vurderingsejendomme <- vurderingsejendomme %>% select(any_of(variable))
+  
+  saveRDS(vurderingsejendomme, "saved_files/vurderingsejendomme.rds")
+
+}
+
+
+```
+
+
+## 2. Antag historik
+
+```{r Antag historik,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+if (antag_historik){
+  
+  antag_historik_felter <- c("vurinfo.udsigtslaengde_hav", 
+                             "vurinfo.udsigtslaengde_soe")
+  
+  
+  ejendomssalg <- ejendomssalg %>%
+                  left_join(vurderingsejendomme %>%
+                            select(vurderingsejendom_id_ice,
+                                   enhed.enhed_id_ice,
+                                   all_of(antag_historik_felter)) %>%
+                  rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)),
+                              by = c("vurderingsejendom_id_ice", "enhed.enhed_id_ice")) %>%
+                  mutate(vurinfo.udsigtslaengde_hav = coalesce(vurinfo.udsigtslaengde_hav_ny, vurinfo.udsigtslaengde_hav),
+                         vurinfo.udsigtslaengde_soe = coalesce(vurinfo.udsigtslaengde_soe_ny, vurinfo.udsigtslaengde_soe)) %>%
+                  select(-ends_with("_ny"))
+  
+  
+}
+
+```
+
+
+## 3. Tilføj geovariable
+
+
+```{r Tilfoej geovariable,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+geo <- konstant::geo
+kommunegrupper <- konstant::kommunegrupper
+
+ejendomssalg <- left_join(ejendomssalg, geo, by = "vurinfo.kommunenummer")
+ejendomssalg <- left_join(ejendomssalg, kommunegrupper, by = "kommune_navn")
+
+```
+
+
+
+## 4. Udvælg PCL-ejendomme
+
+
+```{r PCL,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+#Kun én enhed
+ejendomssalg <- ejendomssalg %>%
+                group_by(vurderingsejendom_id_ice, df_virkningstid) %>%
+                filter(n() == 1) %>%
+                ungroup()
+
+#Kun én delgrund
+ejendomssalg <- ejendomssalg %>%
+                group_by(delgrund.delgrund_ids, df_virkningstid) %>%
+                filter(n() == 1) %>%
+                ungroup()
+
+#Fjern bunkesalg
+ejendomssalg <- ejendomssalg %>%
+                group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, vurinfo.kommunenummer) %>%
+                filter(n() == 1) %>%
+                ungroup()
+
+#Standard PCL-ejendomme
+ejendomssalg_pcl <- ejendomssalg %>%
+                    filter(bygning.bygningsanvendelse %in% c(120,121,122,130,131,132),
+                           enhed.enhedsanvendelse %in% c(120,121,122,130,131,132),
+                           salg.ejendomkategori == "EjendomKategoriEnfamiliesejendom",
+                           vurinfo.vurbenyttelseskode == "01",
+                           is.na(bygning.ejerforholdskode), #ejerforholdskode (hvis den ikke er NA angiver det, at ejeren er et selskab)
+                           bygning.samlet_erhvervsareal == 0,
+                           enhed.areal_til_erhverv == 0,
+                           enhed.antal_vaerelser_til_erhverv == 0,
+                           bygning.andetareal == 0,
+                           enhed.boligtype == "1",
+                           enhed.toiletforhold == "T",
+                           enhed.badeforhold == "V",
+                           enhed.koekkenforhold == "E",
+                           !salg.flereejendommeindikator)
+
+
+
+```
+
+
+
+## 5. Rens af data
+
+
+```{r Rens,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+#Fjen NA'er for forskellige variable
+ejendomssalg_pcl <- ejendomssalg_pcl %>%
+                    filter(!is.na(vurinfo.adresse.koordinatoest),
+                           !is.na(vurinfo.adresse.koordinatnord),
+                           !is.na(salg.koebsdato),
+                           !is.na(bygning.opfoerelsesaar),
+                           !is.na(bygning.omtilbygningsaar),
+                           !is.na(enhed.areal_til_beboelse),
+                           !is.na(delgrund.registeret_areal_uden_vej),
+                           !is.na(delgrund.zone),
+                           !is.na(salg.ialtkoebesum),
+                           !is.na(bygning.tagdaekningsmateriale),
+                           !is.na(bygning.varmeinstallation),
+                           !is.na(bygning.ydervaeggensmateriale),
+                           !is.na(vurinfo.udsigtslaengde_hav),
+                           !is.na(vurinfo.udsigtslaengde_soe),
+                           !is.na(vurinfo.areal_samlet_skov))
+
+
+#Fjern forskellige abnormaliteter
+ejendomssalg_pcl <- ejendomssalg_pcl %>%
+                    filter(as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.opfoerelsesaar,
+                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.omtilbygningsaar,
+                           enhed.areal_til_beboelse == bygning.samlet_boligareal,
+                           enhed.areal_til_beboelse > 0,
+                           delgrund.registeret_areal_uden_vej > 0)
+
+#Udvælg ejendomme med standardegenskaber. For at gøre det simpelt udvælges kun de mest hyppige enhedstyper, tagtyper osv.
+round(prop.table(table(ejendomssalg_pcl$enhed.enhedsanvendelse)), 3) * 100 #120'ere og 130'ere udgør 98%, så disse vælges
+round(prop.table(table(ejendomssalg_pcl$bygning.varmeinstallation)), 3) * 100 #1, 2, 5 og 7 er klart mest fremtrædende så disse vælges
+round(prop.table(table(ejendomssalg_pcl$bygning.tagdaekningsmateriale)), 3) * 100 #1, 2, 3, 4 og 5 er mest fremtrædende så disse vælges
+round(prop.table(table(ejendomssalg_pcl$bygning.ydervaeggensmateriale)), 3) * 100 #1, 2 og 5 er mest fremtrædende så disse vælges
+round(prop.table(table(ejendomssalg_pcl$enhed.antal_vaerelser)), 3) * 100 #Vælg 2, 3, 4, 5, 6, 7 og 8 svarende til alle med en procentdel over 1
+round(prop.table(table(ejendomssalg_pcl$enhed.antal_badevaerelser)), 3) * 100 #Vælg 1, 2, og 3 svarende til alle med en procentdel over 1
+round(prop.table(table(ejendomssalg_pcl$bygning.antal_etager)), 3) * 100 #Vælg 1 og 2 svarende til alle med en procentdel over 1
+
+
+
+
+ejendomssalg_pcl <- ejendomssalg_pcl %>%
+                    filter(salg.ialtkoebesum >= 1e+5 & salg.ialtkoebesum <= 1.5e+7,
+                           delgrund.registeret_areal_uden_vej <= 3000,
+                           delgrund.registeret_areal_uden_vej >= 100,
+                           enhed.areal_til_beboelse <= 400,
+                           enhed.areal_til_beboelse >= 50,
+                           bygning.opfoerelsesaar >= 1900,
+                           delgrund.zone %in% c(1,2), #kun byzone og landzone
+                           enhed.enhedsanvendelse %in% c(120,130),
+                           bygning.bygningsanvendelse %in% c(120,130), 
+                           bygning.varmeinstallation %in% c(1,2,5,7),
+                           bygning.tagdaekningsmateriale %in% c(1,2,3,4,5),
+                           bygning.ydervaeggensmateriale %in% c(1,2,5), 
+                           enhed.antal_vaerelser %in% c(2,3,4,5,6,7,8,9,10),
+                           enhed.antal_badevaerelser %in% c(1,2,3),
+                           bygning.antal_etager %in% c(1,2))
+
+
+#Fjern ejendomme med salgsflag
+ejendomssalg_pcl <- ejendomssalg_pcl %>% 
+                    filter(!str_detect(salg_flag, "120|121|122|123|124|125|127|128|129|130|131|132|150|151|153|154|155|156|202|203|204"))
+
+
+
+```
+
+## 6. Endeligt datasæt
+
+
+```{r Dataset,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+
+model_variable <- c(id = "vurinfo.vurderingsejendom_id",
+                    sales_date = "salg.koebsdato",
+                    municipality = "kommune_navn",
+                    province = "landsdel_navn",
+                    region = "region_navn",
+                    municipality_type = "kommunegruppe",
+                    zone = "delgrund.zone",
+                    sales_price = "salg.ialtkoebesum",
+                    house_type = "enhed.enhedsanvendelse",
+                    living_space = "enhed.areal_til_beboelse",
+                    number_of_rooms = "enhed.antal_vaerelser",
+                    number_of_floors = "bygning.antal_etager",
+                    number_of_bathrooms = "enhed.antal_badevaerelser",
+                    lot_size = "delgrund.registeret_areal_uden_vej",
+                    year_built = "bygning.opfoerelsesaar",
+                    year_rebuilt = "bygning.omtilbygningsaar",
+                    roof_type = "bygning.tagdaekningsmateriale",
+                    heating_type = "bygning.varmeinstallation",
+                    wall_type = "bygning.ydervaeggensmateriale",
+                    coordinate_east = "vurinfo.adresse.koordinatoest",
+                    coordinate_north = "vurinfo.adresse.koordinatnord",
+                    coast_distance = "vurinfo.afstand_kyst",
+                    lake_distance = "vurinfo.afstand_stor_soe",
+                    stream_distance = "vurinfo.afstand_stort_vandloeb",
+                    road_distance = "vurinfo.afstand_naermeste_trafikvejgennemfart_trafikfordeling",
+                    highway_distance = "vurinfo.afstand_motorvej_motortrafikvej",
+                    train_station_distance = "vurinfo.afstand_station_any",
+                    railway_distance = "vurinfo.afstand_jernbane_any",
+                    windmill_distance = "vurinfo.afstand_vindmoelle_any",
+                    ocean_view = "vurinfo.udsigtslaengde_hav",
+                    lake_view = "vurinfo.udsigtslaengde_soe",
+                    forest_size = "vurinfo.areal_samlet_skov")
+
+#vaelg og omdoeb modelvariable
+dataset <- ejendomssalg_pcl %>%
+           rename(!!!setNames(model_variable, names(model_variable))) %>%
+           select(names(model_variable))
+
+
+#lav id om til standard range
+id_map <- match(dataset$id, unique(dataset$id))
+dataset$id <- id_map
+
+#omdoeb zone (1=byzone,2=landzone)
+dataset$zone[dataset$zone == 1] = "Urban"
+dataset$zone[dataset$zone == 2] = "Rural"
+
+#omdoeb municipality_type
+dataset$municipality_type[dataset$municipality_type == "Hovedstadskommune"] = "Capital"
+dataset$municipality_type[dataset$municipality_type == "Landkommune"] = "Rural"
+dataset$municipality_type[dataset$municipality_type == "Oplandskommune"] = "Commuter"
+dataset$municipality_type[dataset$municipality_type == "Provinsbykommune"] = "Provincial"
+dataset$municipality_type[dataset$municipality_type == "Storbykommune"] = "Large city"
+
+#omdoeb hustype
+dataset$house_type[dataset$house_type == 120] = "Detached"
+dataset$house_type[dataset$house_type == 130] = "Semi-detached"
+
+#omdoeb tagtyper
+dataset$roof_type[(dataset$roof_type %in% c(1,2))] = "Roofing felt"
+dataset$roof_type[dataset$roof_type == 3] = "Fiber cement"
+dataset$roof_type[dataset$roof_type == 4] = "Roofing tiles"
+dataset$roof_type[dataset$roof_type == 5] = "Tiles"
+
+#omdoeb varmekilder
+dataset$heating_type[dataset$heating_type == 1] = "District heating"
+dataset$heating_type[dataset$heating_type == 2] = "Central heating"
+dataset$heating_type[dataset$heating_type == 5] = "Heat pump"
+dataset$heating_type[dataset$heating_type == 7] = "Electric heating"
+
+#omdoeb vaegtyper
+dataset$wall_type[dataset$wall_type == 1] = "Brick"
+dataset$wall_type[dataset$wall_type == 2] = "Lightweight concrete"
+dataset$wall_type[dataset$wall_type == 5] = "Wood"
+
+
+#lav ombygningsaar til NA (lidt fjollet, men for at alle imputationer virker på NA-værdier)
+dataset$year_rebuilt[which(dataset$year_rebuilt==0)] = NA
+
+
+write.csv2(dataset, "dataset.csv", row.names = FALSE)
+
+
+```
+
