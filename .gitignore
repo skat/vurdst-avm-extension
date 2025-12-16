@@ -1,4 +1,8 @@
-.Rproj.user
 .Rhistory
-.RData
-.Ruserdata
+.Rproj.user/
+saved_files/
+checkpoints/
+Notebook_files/
+Notebook.pdf
+Dataset.pdf
+Paper_figures/
