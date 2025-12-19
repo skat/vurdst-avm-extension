@@ -2,7 +2,7 @@
 
 ---
 
-# DK model-projects
+# DK
 
 Dette repository indeholder en videreudvikling af Vurderingsstyrelsens nuværende ejendomsværdi­model, baseret på en række simplifikationer i både dannelsen af datagrundlaget og selve den statistiske model.
 
@@ -35,7 +35,7 @@ Modellen køres i øjeblikket ved hjælp af følgende R Markdown-notebooks:
 
 ---
 
-# EN model-projects
+# EN 
 
 This repository contains an improved version of the Danish Public Valuation Agency’s (Vurderingsstyrelsen’s) current property valuation model, based on a set of simplifications applied both to the construction of the underlying dataset and to the statistical model itself.
 
