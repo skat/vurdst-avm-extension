@@ -6,7 +6,7 @@ library(rstudioapi)
 library(ggrastr)
 library(cowplot)
 devtools::load_all("~/projekter/develop/pakker/plotDK/")
-setwd("~/model-projects/")
+setwd("~/vurdst-avm-extension/")
 
 
 if (!dir.exists("Paper_figures")) {
@@ -169,7 +169,7 @@ Figure4 <- wrap_plots(selected_plots, ncol = 3) +
                  legend.justification = "center")
 
 
-ggplot2::ggsave("Paper_figures/Figure4.pdf", Figure4, width = 12, height = 6)
+ggplot2::ggsave("Paper_figures/Figure4.pdf", Figure4, width = 12.5, height = 6)
 
 
 
@@ -215,7 +215,7 @@ plots <- list(plot_test_residuals_log, plot_test_residuals_percent, plot_test_re
 
 Figure6 <- wrap_plots(plots, ncol = 3) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-           theme(legend.position = c(0.75, 0.95),
+           theme(legend.position = c(0.5, 0.1),
                  legend.text = element_text(size = legend_text_size),
                  legend.title = element_text(size = legend_title_size),
                  axis.text = element_text(size = axis_size))
@@ -241,6 +241,56 @@ Figure7 <- plot_uncertainties + plot_outliers_geographically +
                  legend.justification = "center")
 
 ggplot2::ggsave("Paper_figures/Figure7.pdf", Figure7, width = 12, height = 6)
+
+
+## Figure 8 ##
+plot_appraise <- readRDS("saved_files/plot_appraise.rds")
+plots <- as.list(plot_appraise)
+
+# Modify only the 4th plot (Observed vs fitted)
+plots[[4]] <- plots[[4]] +
+              scale_x_continuous(labels = function(x) x/1e6,
+                                 name   = "Fitted sales price [million kr.]") +
+              scale_y_continuous(labels = function(y) y/1e6,
+                                 name   = "Sales price [million kr.]")
+
+Figure8 <- (wrap_plots(plots) & labs(title = NULL, subtitle = NULL, caption = NULL)) +
+           plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
+           theme(axis.text = element_text(size = axis_size))
+
+ggplot2::ggsave("Paper_figures/Figure8.pdf", Figure8, width = 12, height = 8)
+
+
+## Figure 9 ##
+plot_basis <- readRDS("saved_files/plot_basis.rds")
+plot_distribution <- readRDS("saved_files/plot_distribution.rds")
+
+plot_basis <- plot_basis +
+              ylim(0, 0.3) +
+              theme(legend.position = c(0.5, 0.2),
+                    legend.direction = "horizontal",
+                    legend.box = "vertical",
+                    legend.background = element_rect(fill = "white", color = "gray90")) +
+              labs(color = NULL, linetype = NULL)
+
+plots <- list(plot_basis, plot_distribution)
+
+Figure9 <- wrap_plots(plots, ncol = 2) +
+           plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
+           theme(legend.text = element_text(size = 11),
+                 legend.title = element_text(size = legend_title_size))
+
+ggplot2::ggsave("Paper_figures/Figure9.pdf", Figure9, width = 12, height = 5)
+
+
+
+## Figure 10 ##
+concurvity_heatmap_estimate <- readRDS("saved_files/concurvity_heatmap_estimate.rds")
+
+Figure10 <- plot(concurvity_heatmap_estimate$gtable)
+
+ggplot2::ggsave("Paper_figures/Figure10.pdf", Figure10, width = 12, height = 22)
+
 
 
 
@@ -310,57 +360,18 @@ Figure5_SI <- wrap_plots(plot_factors, ncol = 2) +
 ggplot2::ggsave("Paper_figures/Figure5_SI.pdf", Figure5_SI, width = 15, height = 15)
 
 
+## Figure 6 (all concurvity measures) ##
+concurvity_heatmaps <- readRDS("saved_files/concurvity_heatmaps.rds")
 
-## Figure 6 ##
-plot_appraise <- readRDS("saved_files/plot_appraise.rds")
-plots <- as.list(plot_appraise)
-
-# Modify only the 4th plot (Observed vs fitted)
-plots[[4]] <- plots[[4]] +
-              scale_x_continuous(labels = function(x) x/1e6,
-                                 name   = "Fitted sales price [million kr.]") +
-              scale_y_continuous(labels = function(y) y/1e6,
-                                 name   = "Sales price [million kr.]")
-
-Figure6_SI <- (wrap_plots(plots) & labs(title = NULL, subtitle = NULL, caption = NULL)) +
-              plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-              theme(axis.text = element_text(size = axis_size))
-
-ggplot2::ggsave("Paper_figures/Figure6_SI.pdf", Figure6_SI, width = 12, height = 8)
-
-
-## Figure 7 ##
-plot_basis <- readRDS("~/model-projects/saved_files/plot_basis.rds")
-plot_distribution <- readRDS("~/model-projects/saved_files/plot_distribution.rds")
-
-plot_basis <- plot_basis +
-              ylim(0, 0.3) +
-              theme(legend.position = c(0.5, 0.2),
-                    legend.direction = "horizontal",
-                    legend.box = "vertical",
-                    legend.background = element_rect(fill = "white", color = "gray90")) +
-              labs(color = NULL, linetype = NULL)
-
-plots <- list(plot_basis, plot_distribution)
-
-Figure7_SI <- wrap_plots(plots, ncol = 2) +
-              plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-              theme(legend.text = element_text(size = 11),
-                    legend.title = element_text(size = legend_title_size))
-
-ggplot2::ggsave("Paper_figures/Figure7_SI.pdf", Figure7_SI, width = 12, height = 5)
-
-
-## Figure 8 ##
-concurvity_heatmaps <- readRDS("~/model-projects/saved_files/concurvity_heatmaps.rds")
-
-Figure8_SI <- ggdraw() +
+Figure6_SI <- ggdraw() +
               draw_plot(concurvity_heatmaps, 0, 0, 1, 1) +
               draw_label("(a)", x = 0.02, y = 0.994, hjust = 0, vjust = 1, size = 14, color = "white") +
               draw_label("(b)", x = 0.02, y = 0.694, hjust = 0, vjust = 1, size = 14, color = "white") +
               draw_label("(c)", x = 0.02, y = 0.392, hjust = 0, vjust = 1, size = 14, color = "white")
 
-ggplot2::ggsave("Paper_figures/Figure8_SI.pdf", Figure8_SI, width = 12, height = 22)
+ggplot2::ggsave("Paper_figures/Figure6_SI.pdf", Figure6_SI, width = 12, height = 22)
+
+
 
 
 ### Extra figures
