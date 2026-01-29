@@ -43,7 +43,7 @@ test_fraction <- 0.1 # fraction to set aside for testing
 N <- 4 # number of CV folds
 k_spatial = 4000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- FALSE # determines whether or not to preload models in the various chunks
+load <- TRUE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -147,7 +147,7 @@ plot_one <- function(df, var, label) {
 
 
 variables_continuous <- c(
-  sales_price = "Sales price [kr.]",
+  sales_price = "Sales price [DKK]",
   year_built = "Year built",
   year_rebuilt = "Year rebuilt",
   living_space = "Living space [m²]",
@@ -402,7 +402,7 @@ plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range)
     labs(x = "", y = "") +
     scico::scale_fill_scico(
       palette = "vik",
-      name = paste("Partial Effect", model_name),
+      name = paste("Partial Effect", sub("^Model", "Model ", model_name)),
       na.value = "white",
       limits = effect_range
     ) +
@@ -425,7 +425,7 @@ plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range)
     labs(x = "", y = "") +
     scico::scale_fill_scico(
       palette = "vik",
-      name = paste("SE", model_name),
+      name = paste("SE", sub("^Model", "Model ", model_name)),
       na.value = "white",
       limits = se_range
     ) +
@@ -492,7 +492,7 @@ wrap_plots(plot_spatial_smooths, ncol = 3)
 
 
 #### Other smooth effects 
-The code below extracts and plots the remaining smooth effects of the trained GAM-models. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model1. 
+The code below extracts and plots the remaining smooth effects of the trained GAM-models. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model 1. 
 
 ```{r Other smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -528,7 +528,7 @@ for (var in names(smooth_variables)) {
         return(NULL)
       })
     if (!is.null(df)) {
-      df$Model <- model_name
+      df$Model <- sub("^Model", "Model ", model_name)
     }
     df
   })
@@ -549,7 +549,7 @@ for (var in names(smooth_variables)) {
                                  color = .data[[by_var_name]],
                                  linetype = Model, 
                                  group = interaction(Model, .data[[by_var_name]]))) +
-        geom_ribbon(data = subset(combined_df, Model == "Model1"),
+        geom_ribbon(data = subset(combined_df, Model == "Model 1"),
                     aes(ymin = .estimate - .se, ymax = .estimate + .se),
                     alpha = 0.5, 
                     color = NA) +
@@ -569,7 +569,7 @@ for (var in names(smooth_variables)) {
   } else {
 
     p <- ggplot(combined_df, aes(x = .data[[var]], y = .estimate, linetype = Model)) +
-         geom_ribbon(data = subset(combined_df, Model == "Model1"),
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
                      aes(ymin = .estimate - .se, ymax = .estimate + .se),
                      alpha = 0.5, 
                      color = NA) +
@@ -608,7 +608,7 @@ wrap_plots(plot_smooths, ncol = 2) +
 ```
 
 #### Factor effects
-The code below extracts and plots the factor effects of trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model1. 
+The code below extracts and plots the factor effects of trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
 ```{r Factor effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 factor_variables <- c(
@@ -668,11 +668,11 @@ plot_term_effect <- function(df, term, interaction_by = "municipality_type") {
                           group = interaction(Model, if (identical(term, interaction_by) || 
                                                         !(interaction_by %in% names(df_sub))) NULL 
                                                      else .data[[interaction_by]]))) +
-      geom_pointrange(data = subset(df_sub, Model == "Model1"),
+      geom_pointrange(data = subset(df_sub, Model == "Model 1"),
                       aes(ymin = .data[[lower_col]], ymax = .data[[upper_col]]),
                       position = position_dodge(width = 0.5),
                       size = 0.8) +
-      geom_point(data = subset(df_sub, Model != "Model1"),
+      geom_point(data = subset(df_sub, Model != "Model 1"),
                  position = position_dodge(width = 0.5),
                  size = 2.5) +
       coord_flip() +
@@ -728,7 +728,7 @@ for (model_name in names(models)) {
                                      ~ . + 1.96 * get(str_replace(cur_column(), "effect_", "se_")),
                                      .names = "upper_{.col}"))
 
-    df_final$Model <- model_name
+    df_final$Model <- sub("^Model", "Model ", model_name)
     factor_dfs[[length(factor_dfs) + 1]] <- df_final
   }
 }
@@ -834,7 +834,7 @@ performance_sorted <- performance %>%
                       rename(Type = dataset_type,
                              `Municipality type` = municipality_type,
                              `MAPE [%]` = MAPE,
-                             `RMSE [kr.]` = RMSE,
+                             `RMSE [DKK]` = RMSE,
                              `PM20 [%]` = PM20,
                              `COD [%]` = COD)
 
@@ -878,9 +878,8 @@ residual_df_test <- residual_df %>%
 
 plot_test_residuals_log <- ggplot(residual_df_test,
                                   aes(x = sales_price / 1e6, 
-                                      y = residual_sales_price_log, 
-                                      color = municipality_type)) +
-                           geom_point(alpha = 0.6, size = 0.25) +
+                                      y = residual_sales_price_log)) +
+                           geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
                            geom_smooth(aes(x = sales_price / 1e6, 
                                            y = abs(residual_sales_price_log), 
                                            linetype = "MALE"),
@@ -894,7 +893,8 @@ plot_test_residuals_log <- ggplot(residual_df_test,
                                                 nrow = 1, 
                                                 byrow = TRUE)) +
                            ylim(-1, 1) +
-                           labs(x = "Sales Price [million kr.]", y = "Log Residuals", color = "Municipality Type") +
+                           labs(x = "Sales price [million DKK]", 
+                                y = "Log Residuals") +
                            theme(legend.position = c(0.8, 0.7))
 
 saveRDS(plot_test_residuals_log, "saved_files/plot_test_residuals_log.rds")
@@ -904,9 +904,8 @@ print(plot_test_residuals_log)
 
 plot_test_residuals_percent <- ggplot(residual_df_test, 
                                       aes(x = sales_price / 1e6, 
-                                          y = residual_sales_price_percent, 
-                                          color = municipality_type)) +
-                               geom_point(alpha = 0.6, size = 0.25) +
+                                          y = residual_sales_price_percent)) +
+                               geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
   
                                # Absolute residuals line (MAPE) — inherit.aes = FALSE to decouple from color
                                geom_smooth(aes(x = sales_price / 1e6, 
@@ -931,9 +930,8 @@ plot_test_residuals_percent <- ggplot(residual_df_test,
                                                                            size = 0.8),
                                                       nrow = 1, byrow = TRUE)) +
                                 ylim(-100, 100) +
-                                labs(x = "Sales Price [million kr.]", 
-                                     y = "Percentage residuals [%]", 
-                                     color = "Municipality Type") +
+                                labs(x = "Sales price [million DKK]", 
+                                     y = "Percentage residuals [%]") +
                                 theme(legend.position = c(0.8, 0.7))
 
 
@@ -943,9 +941,8 @@ print(plot_test_residuals_percent)
 
 plot_test_residuals <- ggplot(residual_df_test, 
                               aes(x = sales_price / 1e6, 
-                                  y = residual_sales_price / 1e6, 
-                                  color = municipality_type)) +
-                       geom_point(alpha = 0.6, size = 0.25) +
+                                  y = residual_sales_price / 1e6)) +
+                       geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
   
                        # RMSE line, decoupled from color mapping
                        geom_smooth(aes(x = sales_price / 1e6, 
@@ -962,7 +959,8 @@ plot_test_residuals <- ggplot(residual_df_test,
                                                                   nrow = 1, 
                                                                   byrow = TRUE)) +
                        ylim(-3, 3) +
-                       labs(x = "Sales Price [million kr.]", y = "Residuals [million kr.]", color = "Municipality Type") +
+                       labs(x = "Sales price [million DKK]", 
+                            y = "Residuals [million DKK]") +
                        theme(legend.position = c(0.8, 0.7)) # inside top-right
 
 
@@ -976,7 +974,7 @@ print(plot_test_residuals)
 
 ## 4. Model interpretation
 
-```{r Interpretation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
 
 model <- models[[1]]
 model_data <- model.frame(model)
@@ -1099,8 +1097,8 @@ adjustments <- terms %>% mutate(
           
           
                          # Factor terms with interactions
-                         adjustment_house_type = exp(house_type),
                          adjustment_municipality_type = exp(municipality_type),
+                         adjustment_house_type = exp(house_type + `house_type:municipality_type`),
                          adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
                          adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
                          adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
@@ -1176,6 +1174,8 @@ adjustments <- adjustments %>%
 
 results <- bind_cols(grid, adjustments)
 
+str(results)
+
 ```
 
 
@@ -1202,12 +1202,14 @@ test_set <- bind_cols(test_set, pred_matrix)
 
 pred_cols <- grep("^pred_", names(test_set), value = TRUE)
 
+saveRDS(test_set, "~/test_set.rds")
+
 se_limit <- 0.1
 
 test_set <- test_set %>%
             rowwise() %>%
             mutate(se_Models = sd(c_across(all_of(pred_cols))),
-                   se_combined = sqrt(se_Model1^2 + se_Models^2),           
+                   se_combined = max(se_Model1, se_Models),           
                    above_limit = se_combined > se_limit) %>%
             ungroup()
 
@@ -1220,13 +1222,13 @@ plot_uncertainties <- ggplot(test_set, aes(x = se_Model1,
                                  aes(x = se_Model1, y = se_Models),
                                  color = "black", shape = 1, size = 2, stroke = 0.6) +
                       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
-                      scale_color_viridis_c(option = "plasma", trans = "log1p", name = "Sales Price [million kr.]") +
+                      scale_color_viridis_c(option = "plasma", trans = "log1p", name = "Sales price [million DKK]") +
                       scale_shape_discrete(name = "Municipality type") +
                       xlim(0, 0.5) +
                       ylim(0, 0.5) +
-                      labs(x = "GAM SE (Model1)",
+                      labs(x = "GAM SE (Model 1)",
                            y = "Ensemble SE",
-                           color = "Sales Price [million kr.]") 
+                           color = "Sales price [million DKK]") 
 
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
 print(plot_uncertainties)
@@ -1254,7 +1256,7 @@ plot_outliers_geographically <- ggplot() +
                                 scale_shape_discrete(name = "Municipality type") +  
                                 scale_color_viridis_c(option = "plasma", 
                                                       trans = "log1p", 
-                                                      name = "Sales Price [million kr.]") +
+                                                      name = "Sales price [million DKK]") +
                                 theme(plot.background = element_rect(fill = "white", color = NA),
                                       panel.background = element_rect(fill = "white", color = NA))
 
@@ -1269,7 +1271,7 @@ print(plot_outliers_geographically)
 
 
 ### Standard Model Checks
-The code below plots various standard diagnostics for Model1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
+The code below plots various standard diagnostics for Model 1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
 
 ```{r Standard model checks, eval=TRUE, echo=TRUE, warning=FALSE}
 k.check(models$Model1)
@@ -1309,7 +1311,7 @@ if (load) {
 residual_df <- get_residuals(models_basis, dataset)
 
 residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
-residual_df$Model <- sub("(_.*)$", "", residual_df$Model)
+residual_df$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df$Model))
 
 
 performance <- residual_df %>% 
@@ -1338,7 +1340,7 @@ print(plot_basis)
 
 
 ### The Distributional Assumption
-The code simulates a series of posterior distributions of the data based on Model1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
+The code simulates a series of posterior distributions of the data based on Model 1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
 
 ```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -1366,8 +1368,8 @@ plot_distribution <- ggplot(data = data,
                                   aes(sales_price / 1e6, color = type),
                                       linewidth = 0.25,
                                       key_glyph = "path") +
-                     xlim(0, 10) +
-                     xlab('Sales price [million kr.]') +
+                     xlim(0, 15) +
+                     xlab('Sales price [million DKK]') +
                      ylab('Density') +
                      theme(legend.position = c(0.8, 0.9),
                            legend.text = element_text(size = 12)) +
@@ -1383,7 +1385,7 @@ print(plot_distribution)
 
 
 ### Concurvity analysis
-The code investigates concurvity between the various smooths for Model1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
+The code investigates concurvity between the various smooths for Model 1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
 
 ```{r Concurvity analysis, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -1435,7 +1437,7 @@ pretty_names <- c("s(coordinate_east,coordinate_north)" = "Spatial",
                   "s(sales_date_numeric)" = "Sales date",
                   "s(living_space)" = "Living space",
                   "s(lot_size)" = "Lot size",
-                  "s(number_of_bathrooms)" = "Number of Bathrooms",
+                  "s(number_of_bathrooms)" = "Number of bathrooms",
                   "s(year_built)" = "Year built",
                   "s(year_rebuilt)" = "Year rebuilt",
                   "s(coast_distance)" = "Coast distance",
@@ -1464,7 +1466,7 @@ concurvity_heatmap_worst <- pheatmap(conc_grouped_worst,
                                      fontsize_col = 12,
                                      labels_col   = rep("", ncol(conc_grouped_worst)),
                                      color        = viridis(100),
-                                     legend       = FALSE,                          
+                                     legend       = TRUE,                          
                                      breaks       = seq(0, 1, length.out = 100),
                                      border_color = NA,
                                      silent       = TRUE)
@@ -1477,7 +1479,7 @@ concurvity_heatmap_observed <- pheatmap(conc_grouped_observed,
                                         fontsize_col = 12,
                                         labels_col   = rep("", ncol(conc_grouped_observed)),
                                         color        = viridis(100),
-                                        legend       = FALSE,                         
+                                        legend       = TRUE,                         
                                         breaks       = seq(0, 1, length.out = 100),
                                         border_color = NA,
                                         silent       = TRUE)
@@ -1489,7 +1491,7 @@ concurvity_heatmap_estimate <- pheatmap(conc_grouped_estimate,
                                         fontsize_row = 12,
                                         fontsize_col = 12,
                                         color        = viridis(100),
-                                        legend       = FALSE,                           
+                                        legend       = TRUE,                           
                                         breaks       = seq(0, 1, length.out = 100),
                                         border_color = NA,
                                         silent       = TRUE)
@@ -1529,7 +1531,7 @@ concurvity_heatmaps <- plot_grid(concurvity_heatmaps,
                                  ncol = 1,
                                  rel_heights = c(1, 0.04))
 
-
+saveRDS(concurvity_heatmap_estimate, "saved_files/concurvity_heatmap_estimate.rds")
 saveRDS(concurvity_heatmaps, "saved_files/concurvity_heatmaps.rds")
 print(concurvity_heatmaps)
 
@@ -1790,7 +1792,7 @@ plot_market_noise <- ggplot(data = double_sales_lagged,
                                  se = TRUE, 
                                  color = "black", 
                                  linewidth = 1) +
-                     labs(x = "Average Price [million kr.]",
+                     labs(x = "Average price [million DKK]",
                           y = "Log residuals",
                           color = "Municipality type",
                           linetype = NULL) +
@@ -1932,9 +1934,9 @@ test_set <- test_set %>%
             mutate(price_cluster = price_clusters,
                    density_cluster = density_clusters,
                    price_group = factor(price_order[price_cluster],
-                   labels = c("Low Price", "Medium Price", "High Price")),
+                   labels = c("Low price", "Medium price", "High price")),
                    density_group = factor(density_order[density_cluster],
-                   labels = c("Low Density", "Medium Density", "High Density")),
+                   labels = c("Low density", "Medium density", "High density")),
                    price_density_label = paste(price_group, density_group, sep = ", "))
 
 plot_clusters <- ggplot(test_set, aes(x = sales_density, 
@@ -1946,8 +1948,8 @@ plot_clusters <- ggplot(test_set, aes(x = sales_density,
                  scale_x_continuous(trans = "log1p") +
                  scale_y_continuous(trans = "log1p") +
                  scale_shape_discrete(name = "Municipality type") +  
-                 labs(x = expression("Sales Density [sales per km"^2*"]"),
-                      y = "Average Sales Price [kr.]",
+                 labs(x = expression("Sales density [sales per km"^2*"]"),
+                      y = "Average sales price [DKK]",
                       color = "Cluster") + 
                  theme_minimal()
 
