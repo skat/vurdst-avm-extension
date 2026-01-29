@@ -1202,8 +1202,6 @@ test_set <- bind_cols(test_set, pred_matrix)
 
 pred_cols <- grep("^pred_", names(test_set), value = TRUE)
 
-saveRDS(test_set, "~/test_set.rds")
-
 se_limit <- 0.1
 
 test_set <- test_set %>%
