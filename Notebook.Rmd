@@ -1336,6 +1336,64 @@ print(plot_basis)
 
 ```
 
+### Number of folds for model ensemble
+
+The code below fits the model ensemble for numbers of fold for the model ensembles and examines the ensemble spread af a function of this.
+
+```{r Number of folds, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+if (load) {
+  models_folds <- readRDS("saved_files/models_folds.rds")
+} else {
+  
+  folds <- 1:N
+  k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000)
+  k_values <- k_values[k_values <= k_spatial]
+
+  model_grid <- expand.grid(fold = folds, k_spatial = k_values)
+  
+  models_basis <- future_lapply(1:nrow(model_grid), function(idx) {
+    row <- model_grid[idx, ]
+    fit_fold(row$fold, row$k_spatial)})
+  
+  names(models_basis) <- paste0("Model", model_grid$fold, "_", model_grid$k_spatial)
+  saveRDS(models_basis, "saved_files/models_basis.rds")
+}
+
+
+
+
+residual_df <- get_residuals(models_basis, dataset)
+
+residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
+residual_df$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df$Model))
+
+
+performance <- residual_df %>% 
+               mutate(dataset_type = case_when(test ~ "Test",
+                                               validation ~ "Validation",
+                                               TRUE ~ "Training")) %>% 
+                      group_by(dataset_type, municipality_type, k, Model) %>%
+               summarise(MALE = mean(abs(residual_sales_price_log)),
+                         .groups = "drop")
+
+performance_test <- performance %>% filter(dataset_type == "Test")
+
+# Plot
+plot_basis <- ggplot(performance_test, aes(x = k, y = MALE, color = municipality_type, lty = Model)) +
+              geom_line() +
+              geom_point() +
+              labs(x = "Number of Spatial Basis Functions (k)",
+                   y = "MALE",
+                   color = "Municipality type") 
+
+saveRDS(plot_basis, "saved_files/plot_basis.rds")
+print(plot_basis)
+
+
+```
+
+
 
 ### The Distributional Assumption
 The code simulates a series of posterior distributions of the data based on Model 1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
