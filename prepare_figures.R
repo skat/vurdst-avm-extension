@@ -277,7 +277,8 @@ plots <- list(plot_basis, plot_distribution)
 
 Figure9 <- wrap_plots(plots, ncol = 2) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-           theme(legend.text = element_text(size = 11),
+           theme(axis.text = element_text(size = axis_size),
+                 legend.text = element_text(size = legend_text_size),
                  legend.title = element_text(size = legend_title_size))
 
 ggplot2::ggsave("Paper_figures/Figure9.pdf", Figure9, width = 12, height = 5)

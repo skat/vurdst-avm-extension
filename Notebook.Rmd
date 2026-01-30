@@ -1522,7 +1522,7 @@ concurvity_heatmap_worst <- pheatmap(conc_grouped_worst,
                                      fontsize_col = 12,
                                      labels_col   = rep("", ncol(conc_grouped_worst)),
                                      color        = viridis(100),
-                                     legend       = TRUE,                          
+                                     legend       = FALSE,                          
                                      breaks       = seq(0, 1, length.out = 100),
                                      border_color = NA,
                                      silent       = TRUE)
@@ -1535,7 +1535,7 @@ concurvity_heatmap_observed <- pheatmap(conc_grouped_observed,
                                         fontsize_col = 12,
                                         labels_col   = rep("", ncol(conc_grouped_observed)),
                                         color        = viridis(100),
-                                        legend       = TRUE,                         
+                                        legend       = FALSE,                         
                                         breaks       = seq(0, 1, length.out = 100),
                                         border_color = NA,
                                         silent       = TRUE)
@@ -1547,10 +1547,23 @@ concurvity_heatmap_estimate <- pheatmap(conc_grouped_estimate,
                                         fontsize_row = 12,
                                         fontsize_col = 12,
                                         color        = viridis(100),
-                                        legend       = TRUE,                           
+                                        legend       = FALSE,                           
                                         breaks       = seq(0, 1, length.out = 100),
                                         border_color = NA,
                                         silent       = TRUE)
+
+#one with legend true to be saved separately
+concurvity_heatmap_est <- pheatmap(conc_grouped_estimate,
+                                   cluster_rows = FALSE,
+                                   cluster_cols = FALSE,
+                                   na_col       = "black",
+                                   fontsize_row = 12,
+                                   fontsize_col = 12,
+                                   color        = viridis(100),
+                                   legend       = FALSE,                           
+                                   breaks       = seq(0, 1, length.out = 100),
+                                   border_color = NA,
+                                   silent       = TRUE)
 
 # 3) stack the three heatmaps
 
@@ -1587,7 +1600,7 @@ concurvity_heatmaps <- plot_grid(concurvity_heatmaps,
                                  ncol = 1,
                                  rel_heights = c(1, 0.04))
 
-saveRDS(concurvity_heatmap_estimate, "saved_files/concurvity_heatmap_estimate.rds")
+saveRDS(concurvity_heatmap_est, "saved_files/concurvity_heatmap_est.rds")
 saveRDS(concurvity_heatmaps, "saved_files/concurvity_heatmaps.rds")
 print(concurvity_heatmaps)
 
