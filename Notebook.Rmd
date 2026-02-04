@@ -43,7 +43,7 @@ test_fraction <- 0.1 # fraction to set aside for testing
 N <- 4 # number of CV folds
 k_spatial = 4000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- TRUE # determines whether or not to preload models in the various chunks
+load <- FALSE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -765,6 +765,7 @@ get_residuals <- function(models, dataset) {
 
 
     sales_price <- dataset$sales_price
+    sales_date_numeric <- dataset$sales_date_numeric
     predicted_sales_price <- predict(model, newdata = dataset, type = "response")
     residual_sales_price <- predicted_sales_price - sales_price
     residual_sales_price_percent <- residual_sales_price / sales_price * 100
@@ -773,6 +774,7 @@ get_residuals <- function(models, dataset) {
     test <- dataset$test_set
 
     df <- as.data.frame(list("sales_price" = sales_price,
+                             "sales_date_numeric" = sales_date_numeric,
                              "predicted_sales_price" = predicted_sales_price,
                              "residual_sales_price" = residual_sales_price,
                              "residual_sales_price_percent" = residual_sales_price_percent,
@@ -792,6 +794,7 @@ get_residuals <- function(models, dataset) {
 
 
 residual_df <- get_residuals(models, dataset)
+saveRDS(residual_df, "saved_files/residual_df.rds")
 
 performance_countrywide <- residual_df %>% 
                            mutate(dataset_type = case_when(test ~ "Test",
@@ -1188,7 +1191,6 @@ The code below flags outliers based on both the GAM-based uncertainty estimates 
 
 test_set <- dataset %>% filter(test_set)
 
-
 predictions <- imap(models, function(model, name) {
   preds <- predict.gam(model, test_set, type = "link", se.fit = TRUE)
   tibble(!!paste0("pred_", name) := as.vector(preds$fit),
@@ -1196,43 +1198,41 @@ predictions <- imap(models, function(model, name) {
 })
 
 pred_matrix <- bind_cols(predictions)
+test_set_predictions <- bind_cols(test_set, pred_matrix)
+saveRDS(test_set_predictions, "saved_files/test_set_predictions.rds")
 
-# Add to test_set
-test_set <- bind_cols(test_set, pred_matrix)
-
-pred_cols <- grep("^pred_", names(test_set), value = TRUE)
-
+pred_cols <- grep("^pred_", names(test_set_predictions), value = TRUE)
 se_limit <- 0.1
 
-test_set <- test_set %>%
-            rowwise() %>%
-            mutate(se_Models = sd(c_across(all_of(pred_cols))),
-                   se_combined = max(se_Model1, se_Models),           
-                   above_limit = se_combined > se_limit) %>%
-            ungroup()
+test_set_predictions <- test_set_predictions %>%
+                        rowwise() %>%
+                        mutate(se_Models = sd(c_across(all_of(pred_cols))),
+                               se_combined = max(se_Model1, se_Models),           
+                               above_limit = se_combined > se_limit) %>%
+                        ungroup()
 
-plot_uncertainties <- ggplot(test_set, aes(x = se_Model1, 
-                                           y = se_Models, 
-                                           color = sales_price / 1e6, 
-                                           shape = municipality_type)) +
-                      geom_point(alpha = 0.4) +
+plot_uncertainties <- ggplot(test_set_predictions, aes(x = se_Model1, y = se_Models)) +
+                      geom_point(alpha = 0.12, size = 0.6) +
                       geom_point(data = subset(test_set, above_limit),
-                                 aes(x = se_Model1, y = se_Models),
-                                 color = "black", shape = 1, size = 2, stroke = 0.6) +
-                      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
-                      scale_color_viridis_c(option = "plasma", trans = "log1p", name = "Sales price [million DKK]") +
-                      scale_shape_discrete(name = "Municipality type") +
-                      xlim(0, 0.5) +
-                      ylim(0, 0.5) +
-                      labs(x = "GAM SE (Model 1)",
-                           y = "Ensemble SE",
-                           color = "Sales price [million DKK]") 
+                                 shape = 21, 
+                                 fill = NA, 
+                                 color = "black",
+                                 size = 1.9, 
+                                 stroke = 0.7, 
+                                 alpha = 0.9) +
+                      geom_abline(slope = 1, intercept = 0, linetype = "dashed", linewidth = 0.6) +
+                      geom_vline(xintercept = se_limit, linetype = "dotted", linewidth = 0.7) +
+                      geom_hline(yintercept = se_limit, linetype = "dotted", linewidth = 0.7) +
+                      coord_equal(xlim = c(0, 0.5), ylim = c(0, 0.5), expand = FALSE) +
+                      labs(x = expression(SE[GAM]~"(Model 1, link scale)"),
+                           y = expression(SE[Ensemble]~"(link scale)")) +
+                      theme_bw()
 
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
 print(plot_uncertainties)
 
 #Plot outliers geographically
-outliers <- test_set %>% filter(above_limit)
+outliers <- test_set_predictions %>% filter(above_limit)
 
 plot_outliers_geographically <- ggplot() +
                                 # Add land/ocean contour
@@ -1245,13 +1245,11 @@ plot_outliers_geographically <- ggplot() +
                                 geom_point(data = outliers,
                                            aes(x = coordinate_east, 
                                                y = coordinate_north, 
-                                               color = sales_price / 1e6, 
-                                               shape = municipality_type),
+                                               color = sales_price / 1e6),
                                            size = 2.0, alpha = 0.7) +
                                 scale_color_viridis_c(option = "plasma", trans = "log1p") +
                                 coord_fixed() +
                                 theme_void(base_size = 10) +
-                                scale_shape_discrete(name = "Municipality type") +  
                                 scale_color_viridis_c(option = "plasma", 
                                                       trans = "log1p", 
                                                       name = "Sales price [million DKK]") +
@@ -1306,13 +1304,12 @@ if (load) {
 
 
 
-residual_df <- get_residuals(models_basis, dataset)
+residual_df_basis <- get_residuals(models_basis, dataset)
+residual_df_basis$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df_basis$Model))
+residual_df_basis$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df_basis$Model))
+saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
 
-residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
-residual_df$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df$Model))
-
-
-performance <- residual_df %>% 
+performance <- residual_df_basis %>% 
                mutate(dataset_type = case_when(test ~ "Test",
                                                validation ~ "Validation",
                                                TRUE ~ "Training")) %>% 
