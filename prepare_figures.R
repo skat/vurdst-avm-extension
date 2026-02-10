@@ -53,7 +53,7 @@ sales_price_density_plot <- ggplot(dataset, aes(x = sales_price / 1e6, color = m
                             geom_density(alpha = 0.3) +
                             scale_color_brewer(palette = "Set2", name = "Municipality Type") +
                             scale_fill_brewer(palette = "Set2", name = "Municipality Type") +
-                            labs(x = "Sales Price [million kr.]", y = "Density") +
+                            labs(x = "Sales price [million DKK]", y = "Density") +
                             theme(legend.position = c(0.8, 0.8),
                                   legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),
                                   legend.text = element_text(size = legend_text_size),
@@ -63,8 +63,8 @@ sales_price_density_plot <- ggplot(dataset, aes(x = sales_price / 1e6, color = m
 # (c) Plot of average sales price by municipality
 mean_sales_price_histogram <- ggplot(dataset_municipalities, aes(x = mean_sales_price / 1e6, fill = municipality_type)) +
                               geom_histogram(binwidth = 0.1, color = "black", position = "stack", alpha = 0.85) +
-                              scale_fill_brewer(name = "Municipality Type", palette = "Set2") +
-                              labs(x = "Mean Sales Price [million kr.]", y = "Number of Municipalities") +
+                              scale_fill_brewer(name = "Municipality type", palette = "Set2") +
+                              labs(x = "Mean sales price [million DKK]", y = "Number of municipalities") +
                               theme(legend.position = c(0.8, 0.8),
                                     legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),
                                     legend.text = element_text(size = legend_text_size),
@@ -204,24 +204,32 @@ ggplot2::ggsave("Paper_figures/Figure5.pdf", Figure5, width = 13, height = 9)
 plot_test_residuals_log <- readRDS("saved_files/plot_test_residuals_log.rds")
 plot_test_residuals_percent <- readRDS("saved_files/plot_test_residuals_percent.rds")
 plot_test_residuals <- readRDS("saved_files/plot_test_residuals.rds")
+plot_log_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_log_errors.rds")
+plot_percentage_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_percentage_errors.rds")
+plot_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_errors.rds")
+
+plot_test_residuals_log <- plot_test_residuals_log+ guides(color = "none") + theme(legend.position = c(0.5, 0.1))
+plot_test_residuals_percent <- plot_test_residuals_percent + guides(color = "none") + theme(legend.position = c(0.5, 0.1))
+plot_test_residuals <- plot_test_residuals + guides(color = "none") + theme(legend.position = c(0.5, 0.1))
+plot_log_errors <- plot_log_errors + guides(color = "none", linetype = guide_legend(title = NULL)) + theme(legend.position = c(0.45, 0.7))
+plot_percentage_errors <- plot_percentage_errors + guides(color = "none", linetype = guide_legend(title = NULL)) + theme(legend.position = c(0.45, 0.25))
+plot_errors <- plot_errors + guides(color = "none", linetype = guide_legend(title = NULL)) + theme(legend.position = c(0.4, 0.7))
 
 
-plot_test_residuals_log <- plot_test_residuals_log + guides(color = "none")
-plot_test_residuals_percent <- plot_test_residuals_percent + guides(color = "none")
-plot_test_residuals <- plot_test_residuals + guides(color = "none")
-
-
-plots <- list(plot_test_residuals_log, plot_test_residuals_percent, plot_test_residuals)
+plots <- list(plot_test_residuals_log,
+              plot_test_residuals_percent,
+              plot_test_residuals,
+              plot_log_errors,
+              plot_percentage_errors,
+              plot_errors)
 
 Figure6 <- wrap_plots(plots, ncol = 3) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
-           theme(legend.position = c(0.5, 0.1),
-                 legend.text = element_text(size = legend_text_size),
+           theme(legend.text = element_text(size = legend_text_size),
                  legend.title = element_text(size = legend_title_size),
                  axis.text = element_text(size = axis_size))
 
-ggplot2::ggsave("Paper_figures/Figure6.pdf", Figure6, width = 12, height = 4)
-
+ggplot2::ggsave("Paper_figures/Figure6.pdf", Figure6, width = 12, height = 6)
 
 
 ## Figure 7 ##
@@ -229,16 +237,11 @@ plot_uncertainties <- readRDS("saved_files/plot_uncertainties.rds")
 plot_outliers_geographically <- readRDS("saved_files/plot_outliers_geographically.rds")
 
 plot_uncertainties <- plot_uncertainties + guides(shape = "none", color = "none") + theme(axis.text = element_text(size = axis_size))
-plot_outliers_geographically <- plot_outliers_geographically + xlim(440000, 750000)
+plot_outliers_geographically <- plot_outliers_geographically + xlim(440000, 750000) + theme(legend.position = c(1.0, 0.8))
 
 Figure7 <- plot_uncertainties + plot_outliers_geographically +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") +
-           plot_layout(guides = "collect", widths = c(1, 1.75)) &
-           theme(legend.position = "bottom",
-                 legend.text = element_text(size = legend_text_size),
-                 legend.title = element_text(size = legend_title_size),
-                 legend.box = "horizontal",
-                 legend.justification = "center")
+           plot_layout(widths = c(1, 1.3))
 
 ggplot2::ggsave("Paper_figures/Figure7.pdf", Figure7, width = 12, height = 6)
 
@@ -250,9 +253,9 @@ plots <- as.list(plot_appraise)
 # Modify only the 4th plot (Observed vs fitted)
 plots[[4]] <- plots[[4]] +
               scale_x_continuous(labels = function(x) x/1e6,
-                                 name   = "Fitted sales price [million kr.]") +
+                                 name   = "Fitted sales price [million DKK]") +
               scale_y_continuous(labels = function(y) y/1e6,
-                                 name   = "Sales price [million kr.]")
+                                 name   = "Sales price [million DKK]")
 
 Figure8 <- (wrap_plots(plots) & labs(title = NULL, subtitle = NULL, caption = NULL)) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
@@ -286,11 +289,9 @@ ggplot2::ggsave("Paper_figures/Figure9.pdf", Figure9, width = 12, height = 5)
 
 
 ## Figure 10 ##
-concurvity_heatmap_estimate <- readRDS("saved_files/concurvity_heatmap_estimate.rds")
+concurvity_heatmap_est <- readRDS("saved_files/concurvity_heatmap_est.rds")
 
-Figure10 <- plot(concurvity_heatmap_estimate$gtable)
-
-ggplot2::ggsave("Paper_figures/Figure10.pdf", Figure10, width = 12, height = 22)
+ggplot2::ggsave("Paper_figures/Figure10.pdf", concurvity_heatmap_est$gtable, width = 12, height = 8)
 
 
 
