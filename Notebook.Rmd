@@ -64,7 +64,7 @@ for (f in c("saved_files", "checkpoints")) {
 ```
 
 # Introduction
-This notebook provides a walkthrough of the analysis and results described in the paper "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market". 
+This notebook provides a walkthrough of the analysis and results described in the paper "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". 
 
 
 # Dataset 
