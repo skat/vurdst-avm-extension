@@ -5,6 +5,7 @@ library(patchwork)
 library(rstudioapi)
 library(ggrastr)
 library(cowplot)
+library(scales)
 devtools::load_all("~/projekter/develop/pakker/plotDK/")
 setwd("~/vurdst-avm-extension/")
 
