@@ -14,7 +14,7 @@ library(tidyr)
 library(ggplot2)
 library(ggpubr)
 library(mgcv)
-library(gratia) #Use dev version: remotes::install_github("gavinsimpson/gratia")
+library(gratia) 
 library(knitr)
 library(patchwork)
 library(lubridate)
@@ -36,12 +36,14 @@ library(forcats)
 library(pheatmap)
 library(viridis)
 library(cowplot)
+library(scico)
+library(scales)
 
 # Global parameters
 set.seed(123) # for reproducibility
 test_fraction <- 0.1 # fraction to set aside for testing
 N <- 4 # number of CV folds
-k_spatial = 3000 # initial number of basis functions used in the spatial smooths
+k_spatial = 4000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
 load <- TRUE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
@@ -62,7 +64,7 @@ for (f in c("saved_files", "checkpoints")) {
 ```
 
 # Introduction
-This notebook provides a walkthrough of the analysis and results described in the paper "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market". 
+This notebook provides a walkthrough of the analysis and results described in the paper "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". 
 
 
 # Dataset 
@@ -134,7 +136,7 @@ plot_one <- function(df, var, label) {
     ggplot(df_counts, aes(x = x, y = n)) +
       geom_col(aes(fill = x), color = "white", show.legend = FALSE) +
       scale_fill_brewer(palette = "Set3") +
-      geom_text(aes(label = scales::comma(n)), vjust = -0.2, size = 3.3, color = "grey15") +
+      geom_text(aes(label = comma(n)), vjust = -0.2, size = 3.3, color = "grey15") +
       labs(x = NULL, y = NULL) +
       ggtitle(label) + 
       scale_y_continuous(expand = expansion(mult = c(0.02, 0.12))) +
@@ -147,7 +149,7 @@ plot_one <- function(df, var, label) {
 
 
 variables_continuous <- c(
-  sales_price = "Sales price [kr.]",
+  sales_price = "Sales price [DKK]",
   year_built = "Year built",
   year_rebuilt = "Year rebuilt",
   living_space = "Living space [m²]",
@@ -159,7 +161,7 @@ variables_continuous <- c(
   highway_distance = "Distance to highway [m]",
   train_station_distance = "Distance to train station [m]",
   railway_distance = "Distance to railway [m]",
-  windmill_distance = "Distance to windmill [m]",
+  windturbine_distance = "Distance to wind turbine [m]",
   ocean_view = "Ocean view [m]",
   lake_view = "Lake view [m]",
   forest_size = "Forest size [ha]",
@@ -225,7 +227,7 @@ dataset$heating_type <- relevel(factor(dataset$heating_type), ref = "District he
 
 #create a numerical variable for sales_date
 dataset <- dataset %>% mutate(sales_date = as.Date(sales_date),
-                              sales_date_numeric = lubridate::decimal_date(sales_date))
+                              sales_date_numeric = decimal_date(sales_date))
 
 #impute NA-values
 dataset <- dataset %>%
@@ -238,7 +240,7 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
                                        highway_distance,
                                        train_station_distance,
                                        railway_distance,
-                                       windmill_distance),
+                                       windturbine_distance),
                                      ~ replace_na(., max(., na.rm = TRUE))))
 
 #check that there are no remaining NAs
@@ -303,7 +305,7 @@ fit_fold <- function(i, k_spatial, fraction = 1.0) {
                s(highway_distance, k = k_other, pc = 2000) +
                s(train_station_distance, k = k_other, pc = 2000) +
                s(railway_distance, k = k_other, pc = 1000) +
-               s(windmill_distance, k = k_other, pc = 3000) +
+               s(windturbine_distance, k = k_other, pc = 3000) +
                s(ocean_view, k = k_other, pc = 0) +
                s(lake_view, k = k_other, pc = 0) +
                s(forest_size, k = k_other, pc = 0) +
@@ -400,9 +402,9 @@ plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range)
   plot_effect <- ggplot(data = grid) +
     geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
     labs(x = "", y = "") +
-    scico::scale_fill_scico(
+    scale_fill_scico(
       palette = "vik",
-      name = paste("Partial Effect", model_name),
+      name = paste("Partial effect", sub("^Model", "Model ", model_name)),
       na.value = "white",
       limits = effect_range
     ) +
@@ -419,20 +421,20 @@ plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range)
       legend.text = element_text(size = 9),
       legend.title.align = 0.5
     )
+  
+  model_label <- sub("^Model", "Model ", model_name)
 
   plot_se <- ggplot(data = grid) +
     geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
     labs(x = "", y = "") +
-    scico::scale_fill_scico(
-      palette = "vik",
-      name = paste("SE", model_name),
-      na.value = "white",
-      limits = se_range
-    ) +
-    geom_contour(
-      aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-      color = "black", size = 0.4
-    ) +
+    scale_fill_scico(
+    palette = "vik",
+    name = bquote(sigma[.(model_label)]),
+    na.value = "white",
+    limits = se_range) +
+    geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                 color = "black", 
+                 size = 0.4) +
     coord_fixed() +
     theme_void() +
     theme(
@@ -440,8 +442,7 @@ plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range)
       legend.position = c(0.85, 0.75),
       legend.title = element_text(size = 9, margin = margin(b = 5)),
       legend.text = element_text(size = 9),
-      legend.title.align = 0.5
-    )
+      legend.title.align = 0.5)
 
   list(effect = plot_effect, se = plot_se)
 }
@@ -464,12 +465,10 @@ base_grid2$se_across_models <- se_across_models  # <- bake it into the data
 plot_sd_across <- ggplot(data = base_grid2) +
   geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
   labs(x = "", y = "") +
-  scico::scale_fill_scico(
-    palette = "vik",
-    name = "SE across models",
-    na.value = "white",
-    limits = se_limits
-  ) +
+  scale_fill_scico(palette = "vik",
+                   name = expression(sigma[Ensemble]),
+                   na.value = "white",
+                   limits = se_limits) +
   geom_contour(
     aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
     color = "black", size = 0.4
@@ -492,7 +491,7 @@ wrap_plots(plot_spatial_smooths, ncol = 3)
 
 
 #### Other smooth effects 
-The code below extracts and plots the remaining smooth effects of the trained GAM-models. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model1. 
+The code below extracts and plots the remaining smooth effects of the trained GAM-models. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model 1. 
 
 ```{r Other smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -509,7 +508,7 @@ smooth_variables <- c(
   highway_distance = "Distance to highway [m]",
   train_station_distance = "Distance to train station [m]",
   railway_distance = "Distance to railway [m]",
-  windmill_distance = "Distance to windmill [m]",
+  windturbine_distance = "Distance to wind turbine [m]",
   ocean_view = "Ocean view [m]",
   lake_view = "Lake view [m]",
   forest_size = "Forest size [ha]",
@@ -528,7 +527,7 @@ for (var in names(smooth_variables)) {
         return(NULL)
       })
     if (!is.null(df)) {
-      df$Model <- model_name
+      df$Model <- sub("^Model", "Model ", model_name)
     }
     df
   })
@@ -549,14 +548,14 @@ for (var in names(smooth_variables)) {
                                  color = .data[[by_var_name]],
                                  linetype = Model, 
                                  group = interaction(Model, .data[[by_var_name]]))) +
-        geom_ribbon(data = subset(combined_df, Model == "Model1"),
-                    aes(ymin = .estimate - .se, ymax = .estimate + .se),
+        geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                    aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
                     alpha = 0.5, 
                     color = NA) +
         geom_line(linewidth = 1) +
         labs(title = plot_title,
              x = smooth_variables[[var]],
-             y = "Partial Effect") +
+             y = "Partial effect") +
         scale_color_brewer(palette = "Dark2", name = "Municipality type") +
         scale_linetype_manual(values = c("solid", 
                                          "dashed", 
@@ -569,14 +568,14 @@ for (var in names(smooth_variables)) {
   } else {
 
     p <- ggplot(combined_df, aes(x = .data[[var]], y = .estimate, linetype = Model)) +
-         geom_ribbon(data = subset(combined_df, Model == "Model1"),
-                     aes(ymin = .estimate - .se, ymax = .estimate + .se),
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                     aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
                      alpha = 0.5, 
                      color = NA) +
          geom_line(linewidth = 1, color = "black") +
          labs(title = plot_title,
               x = smooth_variables[[var]],
-              y = "Partial Effect") +
+              y = "Partial effect") +
          scale_linetype_manual(values = c("solid", 
                                           "dashed", 
                                           "dotted", 
@@ -608,7 +607,7 @@ wrap_plots(plot_smooths, ncol = 2) +
 ```
 
 #### Factor effects
-The code below extracts and plots the factor effects of trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model1. 
+The code below extracts and plots the factor effects of trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
 ```{r Factor effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 factor_variables <- c(
@@ -668,11 +667,11 @@ plot_term_effect <- function(df, term, interaction_by = "municipality_type") {
                           group = interaction(Model, if (identical(term, interaction_by) || 
                                                         !(interaction_by %in% names(df_sub))) NULL 
                                                      else .data[[interaction_by]]))) +
-      geom_pointrange(data = subset(df_sub, Model == "Model1"),
+      geom_pointrange(data = subset(df_sub, Model == "Model 1"),
                       aes(ymin = .data[[lower_col]], ymax = .data[[upper_col]]),
                       position = position_dodge(width = 0.5),
                       size = 0.8) +
-      geom_point(data = subset(df_sub, Model != "Model1"),
+      geom_point(data = subset(df_sub, Model != "Model 1"),
                  position = position_dodge(width = 0.5),
                  size = 2.5) +
       coord_flip() +
@@ -728,7 +727,7 @@ for (model_name in names(models)) {
                                      ~ . + 1.96 * get(str_replace(cur_column(), "effect_", "se_")),
                                      .names = "upper_{.col}"))
 
-    df_final$Model <- model_name
+    df_final$Model <- sub("^Model", "Model ", model_name)
     factor_dfs[[length(factor_dfs) + 1]] <- df_final
   }
 }
@@ -765,6 +764,7 @@ get_residuals <- function(models, dataset) {
 
 
     sales_price <- dataset$sales_price
+    sales_date_numeric <- dataset$sales_date_numeric
     predicted_sales_price <- predict(model, newdata = dataset, type = "response")
     residual_sales_price <- predicted_sales_price - sales_price
     residual_sales_price_percent <- residual_sales_price / sales_price * 100
@@ -773,6 +773,7 @@ get_residuals <- function(models, dataset) {
     test <- dataset$test_set
 
     df <- as.data.frame(list("sales_price" = sales_price,
+                             "sales_date_numeric" = sales_date_numeric,
                              "predicted_sales_price" = predicted_sales_price,
                              "residual_sales_price" = residual_sales_price,
                              "residual_sales_price_percent" = residual_sales_price_percent,
@@ -792,6 +793,7 @@ get_residuals <- function(models, dataset) {
 
 
 residual_df <- get_residuals(models, dataset)
+saveRDS(residual_df, "saved_files/residual_df.rds")
 
 performance_countrywide <- residual_df %>% 
                            mutate(dataset_type = case_when(test ~ "Test",
@@ -801,7 +803,7 @@ performance_countrywide <- residual_df %>%
                                   summarise(municipality_type = "Countrywide",
                                             MALE = mean(abs(residual_sales_price_log)),
                                             MAPE = mean(abs(residual_sales_price_percent)),
-                                            RMSE = sqrt(mean(residual_sales_price^2)),
+                                            MAE = mean(abs(residual_sales_price)),
                                             PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
                                             COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
                                             PRD = mean(ratio) / (sum(predicted_sales_price)/sum(sales_price)),
@@ -815,7 +817,7 @@ performance_municipality_type <- residual_df %>%
                                  group_by(dataset_type, municipality_type) %>%
                                  summarise(MALE = mean(abs(residual_sales_price_log)),
                                            MAPE = mean(abs(residual_sales_price_percent)),
-                                           RMSE = sqrt(mean(residual_sales_price^2)),
+                                           MAE = mean(abs(residual_sales_price)),
                                            PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
                                            COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
                                            .groups = "drop")
@@ -828,13 +830,13 @@ municipality_levels <- c("Countrywide", sort(setdiff(unique(performance$municipa
 performance_sorted <- performance %>%
                       mutate(dataset_type = factor(dataset_type, levels = c("Training", "Validation", "Test")),
                              municipality_type = factor(municipality_type, levels = municipality_levels),
-                             RMSE = round(RMSE,0),
+                             MAE = round(MAE,0),
                              PRD = ifelse(is.na(PRD), "", round(PRD, 2))) %>%
                       arrange(municipality_type, dataset_type)  %>% 
                       rename(Type = dataset_type,
                              `Municipality type` = municipality_type,
                              `MAPE [%]` = MAPE,
-                             `RMSE [kr.]` = RMSE,
+                             `MAE [DKK]` = MAE,
                              `PM20 [%]` = PM20,
                              `COD [%]` = COD)
 
@@ -875,12 +877,11 @@ residual_df_test <- residual_df %>%
                     filter(test, Model == "Model1") %>% 
                     mutate(pm20 = as.integer(abs(residual_sales_price_percent) <= 20))
 
-
+### Various residual plots for test set
 plot_test_residuals_log <- ggplot(residual_df_test,
                                   aes(x = sales_price / 1e6, 
-                                      y = residual_sales_price_log, 
-                                      color = municipality_type)) +
-                           geom_point(alpha = 0.6, size = 0.25) +
+                                      y = residual_sales_price_log)) +
+                           geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
                            geom_smooth(aes(x = sales_price / 1e6, 
                                            y = abs(residual_sales_price_log), 
                                            linetype = "MALE"),
@@ -894,8 +895,9 @@ plot_test_residuals_log <- ggplot(residual_df_test,
                                                 nrow = 1, 
                                                 byrow = TRUE)) +
                            ylim(-1, 1) +
-                           labs(x = "Sales Price [million kr.]", y = "Log Residuals", color = "Municipality Type") +
-                           theme(legend.position = c(0.8, 0.7))
+                           labs(x = "Sales price [million DKK]", 
+                                y = "Log residuals") +
+                           theme(legend.position = c(0.5, 0.4))
 
 saveRDS(plot_test_residuals_log, "saved_files/plot_test_residuals_log.rds")
 print(plot_test_residuals_log)
@@ -904,9 +906,8 @@ print(plot_test_residuals_log)
 
 plot_test_residuals_percent <- ggplot(residual_df_test, 
                                       aes(x = sales_price / 1e6, 
-                                          y = residual_sales_price_percent, 
-                                          color = municipality_type)) +
-                               geom_point(alpha = 0.6, size = 0.25) +
+                                          y = residual_sales_price_percent)) +
+                               geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
   
                                # Absolute residuals line (MAPE) — inherit.aes = FALSE to decouple from color
                                geom_smooth(aes(x = sales_price / 1e6, 
@@ -931,44 +932,106 @@ plot_test_residuals_percent <- ggplot(residual_df_test,
                                                                            size = 0.8),
                                                       nrow = 1, byrow = TRUE)) +
                                 ylim(-100, 100) +
-                                labs(x = "Sales Price [million kr.]", 
-                                     y = "Percentage residuals [%]", 
-                                     color = "Municipality Type") +
-                                theme(legend.position = c(0.8, 0.7))
+                                labs(x = "Sales price [million DKK]", 
+                                     y = "Percentage residuals [%]") +
+                                theme(legend.position = c(0.5, 0.4))
 
 
 saveRDS(plot_test_residuals_percent, "saved_files/plot_test_residuals_percent.rds")
 print(plot_test_residuals_percent)
 
-
 plot_test_residuals <- ggplot(residual_df_test, 
                               aes(x = sales_price / 1e6, 
-                                  y = residual_sales_price / 1e6, 
-                                  color = municipality_type)) +
-                       geom_point(alpha = 0.6, size = 0.25) +
+                                  y = residual_sales_price / 1e6)) +
+                       geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
   
-                       # RMSE line, decoupled from color mapping
+                       # MAE line, decoupled from color mapping
                        geom_smooth(aes(x = sales_price / 1e6, 
                                        y = abs(residual_sales_price) / 1e6, 
-                                       linetype = "RMSE"),
+                                       linetype = "MAE"),
                                    se = FALSE, 
                                    color = "black", 
                                    size = 0.8, 
                                    inherit.aes = FALSE) +
                       
                        scale_linetype_manual(name = NULL,
-                                             values = c(RMSE = "solid"),
+                                             values = c(MAE = "solid"),
                                              guide = guide_legend(override.aes = list(color = "black", size = 0.8), 
                                                                   nrow = 1, 
                                                                   byrow = TRUE)) +
                        ylim(-3, 3) +
-                       labs(x = "Sales Price [million kr.]", y = "Residuals [million kr.]", color = "Municipality Type") +
-                       theme(legend.position = c(0.8, 0.7)) # inside top-right
+                       labs(x = "Sales price [million DKK]", 
+                            y = "Residuals [million DKK]") +
+                       theme(legend.position = c(0.5, 0.4)) # inside top-right
 
 
 
 saveRDS(plot_test_residuals, "saved_files/plot_test_residuals.rds")
 print(plot_test_residuals)
+
+### Smoothed error plots for train, validation and test error
+
+residual_df$type <- with(residual_df,
+                         ifelse(test,
+                         "Test error",
+                         ifelse(validation,
+                                "Validation error",
+                                "Training error")))
+
+
+plot_log_errors <- ggplot(residual_df) + 
+                   geom_smooth(aes(x = sales_date_numeric, 
+                                   y = abs(residual_sales_price_log), 
+                                   linetype = type),
+                                   se = FALSE, 
+                                   color = "black", 
+                                   size = 0.8, 
+                                   inherit.aes = FALSE) +
+                   labs(x = "Sales date", 
+                        y = "MALE") +
+                   theme(legend.title = element_blank(),
+                         legend.position = c(0.5, 0.4))
+
+
+saveRDS(plot_log_errors, "saved_files/plot_log_errors.rds")
+print(plot_log_errors)
+
+
+plot_percentage_errors <- ggplot(residual_df) + 
+                          geom_smooth(aes(x = sales_date_numeric, 
+                                          y = 100*as.integer(abs(residual_sales_price_percent) <= 20), 
+                                          linetype = type),
+                                          se = FALSE, 
+                                          color = "black", 
+                                          size = 0.8, 
+                                          inherit.aes = FALSE) +
+                          labs(x = "Sales date", 
+                               y = "PM20 [%]") +
+                          theme(legend.title = element_blank(),
+                                legend.position = c(0.5, 0.4))
+
+
+saveRDS(plot_percentage_errors, "saved_files/plot_percentage_errors.rds")
+print(plot_percentage_errors)
+
+
+
+plot_errors <- ggplot(residual_df) + 
+               geom_smooth(aes(x = sales_date_numeric, 
+                               y = abs(residual_sales_price) / 1e6, 
+                               linetype = type),
+                               se = FALSE, 
+                               color = "black", 
+                               size = 0.8, 
+                               inherit.aes = FALSE) +
+               labs(x = "Sales date", 
+                    y = "MAE [million DKK]") +
+               theme(legend.title = element_blank(),
+                     legend.position = c(0.5, 0.4))
+
+saveRDS(plot_errors, "saved_files/plot_errors.rds")
+print(plot_errors)
+
 
 
 ```
@@ -976,7 +1039,7 @@ print(plot_test_residuals)
 
 ## 4. Model interpretation
 
-```{r Interpretation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
 
 model <- models[[1]]
 model_data <- model.frame(model)
@@ -1081,7 +1144,7 @@ adjustments <- terms %>% mutate(
           
                          adjustment_railway_distance = exp(`s(railway_distance)`),
           
-                         adjustment_windmill_distance = exp(`s(windmill_distance)`),
+                         adjustment_windturbine_distance = exp(`s(windturbine_distance)`),
           
                          adjustment_ocean_view = exp(`s(ocean_view)`),
           
@@ -1099,8 +1162,8 @@ adjustments <- terms %>% mutate(
           
           
                          # Factor terms with interactions
-                         adjustment_house_type = exp(house_type),
                          adjustment_municipality_type = exp(municipality_type),
+                         adjustment_house_type = exp(house_type + `house_type:municipality_type`),
                          adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
                          adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
                          adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
@@ -1115,7 +1178,7 @@ adjustments <- terms %>% mutate(
                                                adjustment_highway_distance * 
                                                adjustment_train_station_distance *
                                                adjustment_railway_distance * 
-                                               adjustment_windmill_distance *
+                                               adjustment_windturbine_distance *
                                                adjustment_ocean_view * 
                                                adjustment_lake_view * 
                                                adjustment_municipality_type,
@@ -1146,7 +1209,7 @@ adjustments <- terms %>% mutate(
                                adjustment_highway_distance,
                                adjustment_train_station_distance,
                                adjustment_railway_distance,
-                               adjustment_windmill_distance,
+                               adjustment_windturbine_distance,
                                adjustment_ocean_view,
                                adjustment_lake_view,
                                adjustment_forest_size,
@@ -1176,6 +1239,8 @@ adjustments <- adjustments %>%
 
 results <- bind_cols(grid, adjustments)
 
+str(results)
+
 ```
 
 
@@ -1188,51 +1253,62 @@ The code below flags outliers based on both the GAM-based uncertainty estimates 
 
 test_set <- dataset %>% filter(test_set)
 
-
 predictions <- imap(models, function(model, name) {
   preds <- predict.gam(model, test_set, type = "link", se.fit = TRUE)
   tibble(!!paste0("pred_", name) := as.vector(preds$fit),
-         !!paste0("se_", name) := as.vector(preds$se.fit))
+         !!paste0("sigma_", name) := as.vector(preds$se.fit))
 })
 
 pred_matrix <- bind_cols(predictions)
+test_set_predictions <- bind_cols(test_set, pred_matrix)
+saveRDS(test_set_predictions, "saved_files/test_set_predictions.rds")
 
-# Add to test_set
-test_set <- bind_cols(test_set, pred_matrix)
+pred_cols <- grep("^pred_", names(test_set_predictions), value = TRUE)
+sigma_limit <- 0.1
 
-pred_cols <- grep("^pred_", names(test_set), value = TRUE)
+test_set_predictions <- test_set_predictions %>%
+                        rowwise() %>%
+                        mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols))), # ensemble spread
+                               sigma_combined = pmax(sigma_Model1, sigma_Ensemble),   # max-rule
+                               above_limit    = sigma_combined > sigma_limit) %>%
+                        ungroup()
 
-se_limit <- 0.1
+n_total <- nrow(test_set_predictions)
+n_flagged <- sum(test_set_predictions$above_limit)
+pct_flagged <- 100 * n_flagged / n_total
 
-test_set <- test_set %>%
-            rowwise() %>%
-            mutate(se_Models = sd(c_across(all_of(pred_cols))),
-                   se_combined = sqrt(se_Model1^2 + se_Models^2),           
-                   above_limit = se_combined > se_limit) %>%
-            ungroup()
 
-plot_uncertainties <- ggplot(test_set, aes(x = se_Model1, 
-                                           y = se_Models, 
-                                           color = sales_price / 1e6, 
-                                           shape = municipality_type)) +
-                      geom_point(alpha = 0.4) +
-                      geom_point(data = subset(test_set, above_limit),
-                                 aes(x = se_Model1, y = se_Models),
-                                 color = "black", shape = 1, size = 2, stroke = 0.6) +
-                      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
-                      scale_color_viridis_c(option = "plasma", trans = "log1p", name = "Sales Price [million kr.]") +
-                      scale_shape_discrete(name = "Municipality type") +
-                      xlim(0, 0.5) +
-                      ylim(0, 0.5) +
-                      labs(x = "GAM SE (Model1)",
-                           y = "Ensemble SE",
-                           color = "Sales Price [million kr.]") 
+label_expr <- sprintf(
+  "atop('Flagged: %s / %s (%.2f%%)', 'Rule: max(' * sigma[GAM] * ', ' * sigma[Ensemble] * ') > %.2f')",
+  format(n_flagged, big.mark = ","),
+  format(n_total,   big.mark = ","),
+  pct_flagged,
+  sigma_limit
+)
+
+plot_uncertainties <- ggplot(test_set_predictions, aes(x = sigma_Model1, y = sigma_Ensemble)) +
+  geom_point(alpha = 0.1, size = 0.8, color = "#08306B") +
+  geom_point(data = subset(test_set_predictions, above_limit),
+             shape = 21, fill = NA, color = "#08306B",
+             size = 1.5, stroke = 0.7, alpha = 1.0) +
+  geom_density_2d(color = "grey80", linewidth = 0.6, alpha = 0.8) +
+  geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
+  geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
+  annotate("label",
+           x = 0.075, y = 0.24,
+           label = label_expr,
+           parse = TRUE,
+           hjust = 0, vjust = 1,
+           size = 3.5, label.size = 0.2) +
+  coord_equal(xlim = c(0, 0.25), ylim = c(0, 0.25), expand = FALSE) +
+  labs(x = expression(sigma[GAM]),
+       y = expression(sigma[Ensemble]))
 
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
 print(plot_uncertainties)
 
 #Plot outliers geographically
-outliers <- test_set %>% filter(above_limit)
+outliers <- test_set_predictions %>% filter(above_limit)
 
 plot_outliers_geographically <- ggplot() +
                                 # Add land/ocean contour
@@ -1245,21 +1321,19 @@ plot_outliers_geographically <- ggplot() +
                                 geom_point(data = outliers,
                                            aes(x = coordinate_east, 
                                                y = coordinate_north, 
-                                               color = sales_price / 1e6, 
-                                               shape = municipality_type),
+                                               color = sales_price / 1e6),
                                            size = 2.0, alpha = 0.7) +
-                                scale_color_viridis_c(option = "plasma", trans = "log1p") +
                                 coord_fixed() +
                                 theme_void(base_size = 10) +
-                                scale_shape_discrete(name = "Municipality type") +  
                                 scale_color_viridis_c(option = "plasma", 
                                                       trans = "log1p", 
-                                                      name = "Sales Price [million kr.]") +
+                                                      name = "Sales price [million DKK]") +
                                 theme(plot.background = element_rect(fill = "white", color = NA),
                                       panel.background = element_rect(fill = "white", color = NA))
 
 saveRDS(plot_outliers_geographically, "saved_files/plot_outliers_geographically.rds")
 print(plot_outliers_geographically)
+
 
 ```
 
@@ -1269,7 +1343,7 @@ print(plot_outliers_geographically)
 
 
 ### Standard Model Checks
-The code below plots various standard diagnostics for Model1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
+The code below plots various standard diagnostics for Model 1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
 
 ```{r Standard model checks, eval=TRUE, echo=TRUE, warning=FALSE}
 k.check(models$Model1)
@@ -1306,13 +1380,12 @@ if (load) {
 
 
 
-residual_df <- get_residuals(models_basis, dataset)
+residual_df_basis <- get_residuals(models_basis, dataset)
+residual_df_basis$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df_basis$Model))
+residual_df_basis$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df_basis$Model))
+saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
 
-residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
-residual_df$Model <- sub("(_.*)$", "", residual_df$Model)
-
-
-performance <- residual_df %>% 
+performance <- residual_df_basis %>% 
                mutate(dataset_type = case_when(test ~ "Test",
                                                validation ~ "Validation",
                                                TRUE ~ "Training")) %>% 
@@ -1326,7 +1399,7 @@ performance_test <- performance %>% filter(dataset_type == "Test")
 plot_basis <- ggplot(performance_test, aes(x = k, y = MALE, color = municipality_type, lty = Model)) +
               geom_line() +
               geom_point() +
-              labs(x = "Number of Spatial Basis Functions (k)",
+              labs(x = "Number of spatial basis functions (k)",
                    y = "MALE",
                    color = "Municipality type") 
 
@@ -1338,7 +1411,7 @@ print(plot_basis)
 
 
 ### The Distributional Assumption
-The code simulates a series of posterior distributions of the data based on Model1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
+The code simulates a series of posterior distributions of the data based on Model 1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
 
 ```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -1366,8 +1439,8 @@ plot_distribution <- ggplot(data = data,
                                   aes(sales_price / 1e6, color = type),
                                       linewidth = 0.25,
                                       key_glyph = "path") +
-                     xlim(0, 10) +
-                     xlab('Sales price [million kr.]') +
+                     xlim(0, 15) +
+                     xlab('Sales price [million DKK]') +
                      ylab('Density') +
                      theme(legend.position = c(0.8, 0.9),
                            legend.text = element_text(size = 12)) +
@@ -1383,7 +1456,7 @@ print(plot_distribution)
 
 
 ### Concurvity analysis
-The code investigates concurvity between the various smooths for Model1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
+The code investigates concurvity between the various smooths for Model 1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
 
 ```{r Concurvity analysis, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -1435,7 +1508,7 @@ pretty_names <- c("s(coordinate_east,coordinate_north)" = "Spatial",
                   "s(sales_date_numeric)" = "Sales date",
                   "s(living_space)" = "Living space",
                   "s(lot_size)" = "Lot size",
-                  "s(number_of_bathrooms)" = "Number of Bathrooms",
+                  "s(number_of_bathrooms)" = "Number of bathrooms",
                   "s(year_built)" = "Year built",
                   "s(year_rebuilt)" = "Year rebuilt",
                   "s(coast_distance)" = "Coast distance",
@@ -1445,7 +1518,7 @@ pretty_names <- c("s(coordinate_east,coordinate_north)" = "Spatial",
                   "s(railway_distance)" = "Railway distance",
                   "s(road_distance)" = "Road distance",
                   "s(highway_distance)" = "Highway distance",
-                  "s(windmill_distance)" = "Windmill distance",
+                  "s(windturbine_distance)" = "Wind turbine distance",
                   "s(forest_size)" = "Forest size",
                   "s(ocean_view)" = "Ocean view",
                   "s(lake_view)" = "Lake view")
@@ -1494,6 +1567,19 @@ concurvity_heatmap_estimate <- pheatmap(conc_grouped_estimate,
                                         border_color = NA,
                                         silent       = TRUE)
 
+#one with legend true to be saved separately
+concurvity_heatmap_est <- pheatmap(conc_grouped_estimate,
+                                   cluster_rows = FALSE,
+                                   cluster_cols = FALSE,
+                                   na_col       = "black",
+                                   fontsize_row = 12,
+                                   fontsize_col = 12,
+                                   color        = viridis(100),
+                                   legend       = FALSE,                           
+                                   breaks       = seq(0, 1, length.out = 100),
+                                   border_color = NA,
+                                   silent       = TRUE)
+
 # 3) stack the three heatmaps
 
 concurvity_heatmaps <- plot_grid(concurvity_heatmap_worst$gtable,
@@ -1529,7 +1615,7 @@ concurvity_heatmaps <- plot_grid(concurvity_heatmaps,
                                  ncol = 1,
                                  rel_heights = c(1, 0.04))
 
-
+saveRDS(concurvity_heatmap_est, "saved_files/concurvity_heatmap_est.rds")
 saveRDS(concurvity_heatmaps, "saved_files/concurvity_heatmaps.rds")
 print(concurvity_heatmaps)
 
@@ -1615,31 +1701,31 @@ if (load){
 
 } else{
 
-  gam_model <- mgcv::bam(sales_price_indexed ~ 
-                         s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-                         s(year_built, k = k_other, by = municipality_type, pc = 1970) +
-                         s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
-                         s(living_space, k = k_other, by = municipality_type, pc = 140) +
-                         s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-                         s(coast_distance, k = k_other, pc = 1500) +
-                         s(lake_distance, k = k_other, pc = 500) +
-                         s(stream_distance, k = k_other, pc = 1000) +
-                         s(road_distance, k = k_other, pc = 2000) +
-                         s(highway_distance, k = k_other, pc = 2000) +
-                         s(train_station_distance, k = k_other, pc = 2000) +
-                         s(railway_distance, k = k_other, pc = 1000) +
-                         s(windmill_distance, k = k_other, pc = 3000) +
-                         s(ocean_view, k = k_other, pc = 0) +
-                         s(lake_view, k = k_other, pc = 0) +
-                         s(forest_size, k = k_other, pc = 0) +
-                         s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
-                         house_type*municipality_type +
-                         roof_type*municipality_type +
-                         wall_type*municipality_type +
-                         heating_type*municipality_type,
-                         data = other_sales,
-                         family = tw(link=log),
-                         method = "fREML")
+  gam_model <- bam(sales_price_indexed ~ 
+                   s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+                   s(year_built, k = k_other, by = municipality_type, pc = 1970) +
+                   s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
+                   s(living_space, k = k_other, by = municipality_type, pc = 140) +
+                   s(lot_size, k = k_other, by = municipality_type, pc = 800) +
+                   s(coast_distance, k = k_other, pc = 1500) +
+                   s(lake_distance, k = k_other, pc = 500) +
+                   s(stream_distance, k = k_other, pc = 1000) +
+                   s(road_distance, k = k_other, pc = 2000) +
+                   s(highway_distance, k = k_other, pc = 2000) +
+                   s(train_station_distance, k = k_other, pc = 2000) +
+                   s(railway_distance, k = k_other, pc = 1000) +
+                   s(windturbine_distance, k = k_other, pc = 3000) +
+                   s(ocean_view, k = k_other, pc = 0) +
+                   s(lake_view, k = k_other, pc = 0) +
+                   s(forest_size, k = k_other, pc = 0) +
+                   s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
+                   house_type*municipality_type +
+                   roof_type*municipality_type +
+                   wall_type*municipality_type +
+                   heating_type*municipality_type,
+                   data = other_sales,
+                   family = tw(link=log),
+                   method = "fREML")
 
 
   saveRDS(gam_model, "saved_files/gam_model.rds")
@@ -1654,12 +1740,12 @@ double_sales <- double_sales %>%
 
 ### Fit XGboost Model and evaluate performance
 
-dummy_model <- caret::dummyVars(~ roof_type +
-                                  wall_type +
-                                  heating_type +
-                                  house_type +
-                                  municipality_type,
-                                data = other_sales)
+dummy_model <- dummyVars(~ roof_type +
+                           wall_type +
+                           heating_type +
+                           house_type +
+                           municipality_type,
+                         data = other_sales)
 
 categorical_encoded <- predict(dummy_model, newdata = other_sales)
 
@@ -1678,7 +1764,7 @@ X <- other_sales %>%
             highway_distance,
             train_station_distance,
             railway_distance,
-            windmill_distance,
+            windturbine_distance,
             forest_size,
             ocean_view,
             lake_view) %>%
@@ -1727,7 +1813,7 @@ X <- double_sales %>%
             highway_distance,
             train_station_distance,
             railway_distance,
-            windmill_distance,
+            windturbine_distance,
             forest_size,
             ocean_view,
             lake_view) %>%
@@ -1790,7 +1876,7 @@ plot_market_noise <- ggplot(data = double_sales_lagged,
                                  se = TRUE, 
                                  color = "black", 
                                  linewidth = 1) +
-                     labs(x = "Average Price [million kr.]",
+                     labs(x = "Average price [million DKK]",
                           y = "Log residuals",
                           color = "Municipality type",
                           linetype = NULL) +
@@ -1932,9 +2018,9 @@ test_set <- test_set %>%
             mutate(price_cluster = price_clusters,
                    density_cluster = density_clusters,
                    price_group = factor(price_order[price_cluster],
-                   labels = c("Low Price", "Medium Price", "High Price")),
+                   labels = c("Low price", "Medium price", "High price")),
                    density_group = factor(density_order[density_cluster],
-                   labels = c("Low Density", "Medium Density", "High Density")),
+                   labels = c("Low density", "Medium density", "High density")),
                    price_density_label = paste(price_group, density_group, sep = ", "))
 
 plot_clusters <- ggplot(test_set, aes(x = sales_density, 
@@ -1946,8 +2032,8 @@ plot_clusters <- ggplot(test_set, aes(x = sales_density,
                  scale_x_continuous(trans = "log1p") +
                  scale_y_continuous(trans = "log1p") +
                  scale_shape_discrete(name = "Municipality type") +  
-                 labs(x = expression("Sales Density [sales per km"^2*"]"),
-                      y = "Average Sales Price [kr.]",
+                 labs(x = expression("Sales density [sales per km"^2*"]"),
+                      y = "Average sales price [DKK]",
                       color = "Cluster") + 
                  theme_minimal()
 
@@ -2002,7 +2088,64 @@ plot_interplay <- ggplot(binned_data, aes(x = density_group,
 saveRDS(plot_interplay, "saved_files/plot_interplay.rds")
 print(plot_interplay)
 
+```
+
+### Number of folds for model ensemble
+
+The code below fits the model ensemble for numbers of fold for the model ensembles and examines the ensemble spread af a function of this.
+
+```{r Number of folds, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+if (load) {
+  models_folds <- readRDS("saved_files/models_folds.rds")
+} else {
+  
+  folds <- 1:N
+  k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000)
+  k_values <- k_values[k_values <= k_spatial]
+
+  model_grid <- expand.grid(fold = folds, k_spatial = k_values)
+  
+  models_basis <- future_lapply(1:nrow(model_grid), function(idx) {
+    row <- model_grid[idx, ]
+    fit_fold(row$fold, row$k_spatial)})
+  
+  names(models_basis) <- paste0("Model", model_grid$fold, "_", model_grid$k_spatial)
+  saveRDS(models_basis, "saved_files/models_basis.rds")
+}
+
+
+
+
+residual_df <- get_residuals(models_basis, dataset)
+
+residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
+residual_df$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df$Model))
+
+
+performance <- residual_df %>% 
+               mutate(dataset_type = case_when(test ~ "Test",
+                                               validation ~ "Validation",
+                                               TRUE ~ "Training")) %>% 
+                      group_by(dataset_type, municipality_type, k, Model) %>%
+               summarise(MALE = mean(abs(residual_sales_price_log)),
+                         .groups = "drop")
+
+performance_test <- performance %>% filter(dataset_type == "Test")
+
+# Plot
+plot_basis <- ggplot(performance_test, aes(x = k, y = MALE, color = municipality_type, lty = Model)) +
+              geom_line() +
+              geom_point() +
+              labs(x = "Number of spatial basis functions (k)",
+                   y = "MALE",
+                   color = "Municipality type") 
+
+saveRDS(plot_basis, "saved_files/plot_basis.rds")
+print(plot_basis)
+
 
 ```
+
 
 
