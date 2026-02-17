@@ -42,8 +42,8 @@ dataset_municipalities <- dataset_municipalities %>%
 # (a) Plot of municipality types
 municipality_type_plot <- plotDK(data = dataset_municipalities, id = "kommune", value = "municipality_type", niveau = "kommune") +
                           geom_path() +
-                          scale_fill_brewer(name = "Municipality Type", palette = "Set2") +
-                          labs(fill = "Municipality Type") +
+                          scale_fill_brewer(name = "Municipality type", palette = "Set2") +
+                          labs(fill = "Municipality type") +
                           theme(legend.position = c(0.775, 0.8),
                                 legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),  # moves title up from the color bar
                                 legend.text = element_text(size = legend_text_size),
@@ -52,8 +52,8 @@ municipality_type_plot <- plotDK(data = dataset_municipalities, id = "kommune", 
 # (b) Density distribution of sales prices colored by municipality type
 sales_price_density_plot <- ggplot(dataset, aes(x = sales_price / 1e6, color = municipality_type, fill = municipality_type)) +
                             geom_density(alpha = 0.3) +
-                            scale_color_brewer(palette = "Set2", name = "Municipality Type") +
-                            scale_fill_brewer(palette = "Set2", name = "Municipality Type") +
+                            scale_color_brewer(palette = "Set2", name = "Municipality type") +
+                            scale_fill_brewer(palette = "Set2", name = "Municipality type") +
                             labs(x = "Sales price [million DKK]", y = "Density") +
                             theme(legend.position = c(0.8, 0.8),
                                   legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),
