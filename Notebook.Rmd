@@ -45,7 +45,7 @@ test_fraction <- 0.1 # fraction to set aside for testing
 N <- 4 # number of CV folds
 k_spatial = 4000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- TRUE # determines whether or not to preload models in the various chunks
+load <- FALSE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -1279,7 +1279,7 @@ pct_flagged <- 100 * n_flagged / n_total
 
 
 label_expr <- sprintf(
-  "atop('Flagged: %s / %s (%.2f%%)', 'Rule: max(' * sigma[GAM] * ', ' * sigma[Ensemble] * ') > %.2f')",
+  "atop('Flagged: %s / %s (%.2f%%)', 'Rule: max(' * sigma[\"Model 1\"] * ', ' * sigma[Ensemble] * ') > %.2f')",
   format(n_flagged, big.mark = ","),
   format(n_total,   big.mark = ","),
   pct_flagged,
@@ -1301,8 +1301,8 @@ plot_uncertainties <- ggplot(test_set_predictions, aes(x = sigma_Model1, y = sig
            hjust = 0, vjust = 1,
            size = 3.5, label.size = 0.2) +
   coord_equal(xlim = c(0, 0.25), ylim = c(0, 0.25), expand = FALSE) +
-  labs(x = expression(sigma[GAM]),
-       y = expression(sigma[Ensemble]))
+  labs(x = expression(sigma["Model 1"]),
+       y = expression(sigma["Ensemble"]))
 
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
 print(plot_uncertainties)
