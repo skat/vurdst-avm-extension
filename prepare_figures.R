@@ -26,7 +26,8 @@ legend_text_size <- 12
 ### Figures main paper ###
 
 ## Figure 1 ##
-dataset <- read.csv2("dataset.csv")
+dataset <- readRDS("dataset.rds")
+dataset <- dataset %>% filter(type == "Property sale")
 
 dataset_municipalities <- dataset %>%
                           group_by(municipality) %>%
