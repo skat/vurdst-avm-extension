@@ -41,9 +41,8 @@ library(scales)
 
 # Global parameters
 set.seed(123) # for reproducibility
-test_fraction <- 0.1 # fraction to set aside for testing
 N <- 4 # number of CV folds
-k_spatial = 4000 # initial number of basis functions used in the spatial smooths
+k_spatial = 1000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
 load <- FALSE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
@@ -74,7 +73,7 @@ The analysis is based on a dataset of single family home sales in Denmark in the
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
-dataset <- read.csv2("dataset.csv")
+dataset <- readRDS("dataset.rds")
 str(dataset)
 
 ```
@@ -209,7 +208,7 @@ The analysis relies on a set of variable conversions performed in order to:
 - Convert categorical variables to factors
 - Convert sales dates to numeric values
 
-The two first are straightforward while the treatment of missing values requires more consideration. The analysis presented in XXX is based on the following simply imputation scheme: 
+The two first are straightforward while the treatment of missing values requires more consideration. The analysis presented in the paper is based on the following simply imputation scheme: 
 
 - year_rebuilt: For this variable all NA's as well as values less than 1970 are replaced by 1970. 
 - distance-variables: For these variables all NA's are replaced by the maximum value of the respective variable. 
@@ -243,8 +242,8 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
                                        windturbine_distance),
                                      ~ replace_na(., max(., na.rm = TRUE))))
 
-#check that there are no remaining NAs
-which(is.na(dataset), arr.ind = TRUE)
+#check that there are no remaining NAs in sales data
+which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 
 ```
 
@@ -252,28 +251,20 @@ which(is.na(dataset), arr.ind = TRUE)
 A simple 4-fold cross-validation split is implemented in the code below. 
 
 ```{r Test set and cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+# pick out sales and properties
+dataset_sales <- dataset %>% filter(type == "Property sale")
+dataset_properties <- dataset %>% 
+                      filter(type == "Property") %>% 
+                      mutate(sales_date_numeric = 2024.0) #we want to value properties 1 January 2024
 
-#shuffle dataset randomly
-dataset <- dataset[sample(nrow(dataset)), ]
+assign_cv_folds <- function(data, N, seed = 123) {
+  set.seed(seed)
+  data %>% mutate(validation_set = sample(rep(1:N, length.out = n())))
+}
 
-#assign testing points
-dataset <- dataset %>% mutate(test_set = runif(n()) < test_fraction)
+dataset_sales_cv <- assign_cv_folds(dataset_sales, N = N, seed = 123)
 
-#assign validation points
-dataset <- dataset %>%
-  mutate(
-    validation_set = ifelse(
-      !test_set,
-      ceiling(
-        rank(runif(sum(!test_set))) * N / sum(!test_set)
-      ),
-      NA
-    )
-  )
-
-#check that it looks correct
-table(dataset$test_set, useNA = "ifany")
-table(dataset$validation_set, useNA = "ifany")
+table(dataset_sales_cv$validation_set, useNA = "ifany")
 
 ```
 # GAM Models 
@@ -281,10 +272,11 @@ table(dataset$validation_set, useNA = "ifany")
 ## 1. Model training
 The code below fits the GAM model structure described in "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market" based on the cross validation split employed. 
 
-```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
-fit_fold <- function(i, k_spatial, fraction = 1.0) {
+```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
+                     checkpoint_prefix = "Model", save_checkpoint = TRUE) {
   
-  training_set <- dataset %>% filter(validation_set != i, !test_set)
+  training_set <- data %>% filter(validation_set != i)
   
   training_subset <- training_set %>%
                      group_by(municipality_type) %>%
@@ -310,31 +302,53 @@ fit_fold <- function(i, k_spatial, fraction = 1.0) {
                s(lake_view, k = k_other, pc = 0) +
                s(forest_size, k = k_other, pc = 0) +
                s(number_of_bathrooms, by = municipality_type, k = 2, pc = 1) +
-               house_type*municipality_type +
+               house_type * municipality_type +
                roof_type * municipality_type +
                wall_type * municipality_type +
                heating_type * municipality_type,
                data = training_subset,
+               chunk.size = nrow(training_subset),
                family = tw(link = log),
-               method = "fREML"
-            )
+               method = "fREML")
   
-  
-  filename <- sprintf("Model%d_%d_%.2f.rds", i, k_spatial, fraction)
-  saveRDS(model, file = file.path("checkpoints", filename))
+  if (save_checkpoint) {
+    filename <- sprintf("%s_fold%d_k%d_frac%.2f.rds",
+                        checkpoint_prefix, i, k_spatial, fraction)
+    saveRDS(model, file = file.path("checkpoints", filename))
+  }
   
   model
+}
 
+fit_model_ensemble <- function(data, N, k_spatial, k_other = 10, fraction = 1.0, checkpoint_prefix = "Model") {
+  
+  models <- future_lapply(1:N, function(i) {
+    fit_fold(
+      i = i,
+      data = data,
+      k_spatial = k_spatial,
+      k_other = k_other,
+      fraction = fraction,
+      checkpoint_prefix = checkpoint_prefix
+    )
+  })
+  names(models) <- paste0("Model", 1:N)
+  models
 }
 
 if (load) {
   models <- readRDS("saved_files/models.rds")
 } else {
-  models <- future_lapply(1:N, function(i) fit_fold(i, k_spatial = k_spatial))
-  names(models) <- paste0("Model", 1:N)
+  models <- fit_model_ensemble(
+    data = dataset_sales_cv,
+    N = N,
+    k_spatial = k_spatial,
+    k_other = k_other,
+    fraction = 1.0,
+    checkpoint_prefix = "main"
+  )
   saveRDS(models, "saved_files/models.rds")
 }
-
 
 ```
 
@@ -754,66 +768,56 @@ The code below extracts various residual types and calculates different performa
 
 
 ```{r Model performance, eval=TRUE, echo=TRUE, warning=FALSE}
-get_residuals <- function(models, dataset) {
 
+get_residuals <- function(models, dataset, fold_from_name = TRUE) {
+  
   residual_list <- future_lapply(seq_along(models), function(i) {
-
+    
     model_name <- names(models)[i]
     model <- models[[i]]
-    fold <- as.integer(sub("^Model(\\d+).*$", "\\1", model_name))
-
-
-    sales_price <- dataset$sales_price
-    sales_date_numeric <- dataset$sales_date_numeric
+    
+    if (fold_from_name) {
+      fold <- as.integer(sub("^Model(\\d+).*$", "\\1", model_name))
+    } else {
+      fold <- i
+    }
+    
     predicted_sales_price <- predict(model, newdata = dataset, type = "response")
-    residual_sales_price <- predicted_sales_price - sales_price
-    residual_sales_price_percent <- residual_sales_price / sales_price * 100
-    residual_sales_price_log <- log(predicted_sales_price) - log(sales_price)
-    validation <- dataset$validation_set == fold
-    test <- dataset$test_set
-
-    df <- as.data.frame(list("sales_price" = sales_price,
-                             "sales_date_numeric" = sales_date_numeric,
-                             "predicted_sales_price" = predicted_sales_price,
-                             "residual_sales_price" = residual_sales_price,
-                             "residual_sales_price_percent" = residual_sales_price_percent,
-                             "residual_sales_price_log" = residual_sales_price_log,
-                             "ratio" = predicted_sales_price / sales_price,
-                             "validation" = validation,
-                             "test" = test,
-                             "id" = dataset$id,
-                             "municipality_type" = dataset$municipality_type,
-                             "Model" = model_name))
-
+    
+    tibble(sales_price = dataset$sales_price,
+           sales_date_numeric = dataset$sales_date_numeric,
+           predicted_sales_price = predicted_sales_price,
+           residual_sales_price = predicted_sales_price - dataset$sales_price,
+           residual_sales_price_percent = (predicted_sales_price - dataset$sales_price) / dataset$sales_price * 100,
+           residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
+           ratio = predicted_sales_price / dataset$sales_price,
+           validation = dataset$validation_set == fold,
+           id = dataset$id,
+           municipality_type = dataset$municipality_type,
+           Model = model_name)
+    
   })
-
+  
   bind_rows(residual_list)
-
 }
 
-
-residual_df <- get_residuals(models, dataset)
+residual_df <- get_residuals(models, dataset_sales_cv)
 saveRDS(residual_df, "saved_files/residual_df.rds")
 
-performance_countrywide <- residual_df %>% 
-                           mutate(dataset_type = case_when(test ~ "Test",
-                                                           validation ~ "Validation",
-                                                           TRUE ~ "Training")) %>% 
-                                  group_by(dataset_type) %>%
-                                  summarise(municipality_type = "Countrywide",
-                                            MALE = mean(abs(residual_sales_price_log)),
-                                            MAPE = mean(abs(residual_sales_price_percent)),
-                                            MAE = mean(abs(residual_sales_price)),
-                                            PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
-                                            COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
-                                            PRD = mean(ratio) / (sum(predicted_sales_price)/sum(sales_price)),
-                                            .groups = "drop")
+performance_countrywide <- residual_df %>%
+                           mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
+                           group_by(dataset_type) %>%
+                           summarise(municipality_type = "Countrywide",
+                                     MALE = mean(abs(residual_sales_price_log)),
+                                     MAPE = mean(abs(residual_sales_price_percent)),
+                                     MAE = mean(abs(residual_sales_price)),
+                                     PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
+                                     COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
+                                     PRD = mean(ratio) / (sum(predicted_sales_price) / sum(sales_price)),
+                                     .groups = "drop")
 
-
-performance_municipality_type <- residual_df %>% 
-                                 mutate(dataset_type = case_when(test ~ "Test",
-                                                                 validation ~ "Validation",
-                                                                 TRUE ~ "Training")) %>% 
+performance_municipality_type <- residual_df %>%
+                                 mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
                                  group_by(dataset_type, municipality_type) %>%
                                  summarise(MALE = mean(abs(residual_sales_price_log)),
                                            MAPE = mean(abs(residual_sales_price_percent)),
@@ -822,13 +826,12 @@ performance_municipality_type <- residual_df %>%
                                            COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
                                            .groups = "drop")
 
-
 performance <- bind_rows(performance_countrywide, performance_municipality_type)
 
 municipality_levels <- c("Countrywide", sort(setdiff(unique(performance$municipality_type), "Countrywide")))
 
 performance_sorted <- performance %>%
-                      mutate(dataset_type = factor(dataset_type, levels = c("Training", "Validation", "Test")),
+                      mutate(dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
                              municipality_type = factor(municipality_type, levels = municipality_levels),
                              MAE = round(MAE,0),
                              PRD = ifelse(is.na(PRD), "", round(PRD, 2))) %>%
@@ -850,12 +853,12 @@ select(-`Municipality type`),
        caption = "Model Performance by Municipality Type", 
        booktabs = TRUE) %>%
 kable_styling(full_width = FALSE, position = "center") %>%
-group_rows("Countrywide", 1, 3) %>%
-group_rows("Capital", 4, 6) %>%
-group_rows("Commuter", 7, 9) %>%
-group_rows("Large city", 10, 12) %>%
-group_rows("Provincial", 13, 15) %>%
-group_rows("Rural", 16, 18)
+group_rows("Countrywide", 1, 2) %>%
+group_rows("Capital", 3, 4) %>%
+group_rows("Commuter", 5, 6) %>%
+group_rows("Large city", 7, 8) %>%
+group_rows("Provincial", 9, 10) %>%
+group_rows("Rural", 11, 12)
 
 tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
                    format = "latex", booktabs = TRUE, digits = 2,
@@ -864,119 +867,114 @@ tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
              kable_styling(full_width = FALSE, 
                            position = "center", 
                            latex_options = c("hold_position")) %>%
-             group_rows("Countrywide", 1, 3) %>%
-             group_rows("Capital",      4, 6) %>%
-             group_rows("Commuter",     7, 9) %>%
-             group_rows("Large city",  10,12) %>%
-             group_rows("Provincial",  13,15) %>%
-             group_rows("Rural",       16,18)
+             group_rows("Countrywide", 1, 2) %>%
+             group_rows("Capital", 3, 4) %>%
+             group_rows("Commuter", 5, 6) %>%
+             group_rows("Large city", 7, 8) %>%
+             group_rows("Provincial", 9, 10) %>%
+             group_rows("Rural", 11, 12)
 
 writeLines(tbl_latex, "saved_files/performance_by_muni.tex")
 
-residual_df_test <- residual_df %>% 
-                    filter(test, Model == "Model1") %>% 
-                    mutate(pm20 = as.integer(abs(residual_sales_price_percent) <= 20))
+residual_df_validation <- residual_df %>% 
+                          filter(validation) %>% 
+                          mutate(pm20 = as.integer(abs(residual_sales_price_percent) <= 20))
 
 ### Various residual plots for test set
-plot_test_residuals_log <- ggplot(residual_df_test,
-                                  aes(x = sales_price / 1e6, 
-                                      y = residual_sales_price_log)) +
-                           geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
-                           geom_smooth(aes(x = sales_price / 1e6, 
-                                           y = abs(residual_sales_price_log), 
-                                           linetype = "MALE"),
-                                       se = FALSE, 
-                                       color = "black", 
-                                       size = 0.8, 
-                                       inherit.aes = FALSE) +
-                           scale_linetype_manual(name = NULL,
-                                                 values = c(MALE = "solid"),
-                           guide = guide_legend(override.aes = list(color = "black", size = 0.8),
-                                                nrow = 1, 
-                                                byrow = TRUE)) +
-                           ylim(-1, 1) +
-                           labs(x = "Sales price [million DKK]", 
-                                y = "Log residuals") +
-                           theme(legend.position = c(0.5, 0.4))
-
-saveRDS(plot_test_residuals_log, "saved_files/plot_test_residuals_log.rds")
-print(plot_test_residuals_log)
-
-
-
-plot_test_residuals_percent <- ggplot(residual_df_test, 
-                                      aes(x = sales_price / 1e6, 
-                                          y = residual_sales_price_percent)) +
-                               geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
-  
-                               # Absolute residuals line (MAPE) — inherit.aes = FALSE to decouple from color
-                               geom_smooth(aes(x = sales_price / 1e6, 
-                                               y = abs(residual_sales_price_percent), 
-                                               linetype = "MAPE"),
-                                           se = FALSE, 
-                                           color = "black", 
-                                           size = 0.8, 
-                                           inherit.aes = FALSE) +
-  
-                                # pm20 probability line 
-                                geom_smooth(aes(x = sales_price / 1e6, 
-                                                y = pm20 * 100, 
-                                                linetype = "PM20"),
-                                            se = FALSE, 
-                                            color = "black", 
-                                            size = 0.8, 
-                                            inherit.aes = FALSE) +
+plot_validation_residuals_log <- ggplot(residual_df_validation,
+                                        aes(x = sales_price / 1e6, 
+                                            y = residual_sales_price_log)) +
+                                 geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
+                                 geom_smooth(aes(x = sales_price / 1e6, 
+                                                 y = abs(residual_sales_price_log), 
+                                                 linetype = "MALE"),
+                                             se = FALSE, 
+                                             color = "black", 
+                                             size = 0.8, 
+                                             inherit.aes = FALSE) +
                                 scale_linetype_manual(name = NULL,
-                                                      values = c(MAPE = "solid", PM20 = "dashed"),
-                                                      guide = guide_legend(override.aes = list(color = "black", 
-                                                                           size = 0.8),
-                                                      nrow = 1, byrow = TRUE)) +
-                                ylim(-100, 100) +
+                                                      values = c(MALE = "solid"),
+                                guide = guide_legend(override.aes = list(color = "black", size = 0.8),
+                                                     nrow = 1, 
+                                                     byrow = TRUE)) +
+                                ylim(-1, 1) +
                                 labs(x = "Sales price [million DKK]", 
-                                     y = "Percentage residuals [%]") +
+                                     y = "Log residuals") +
                                 theme(legend.position = c(0.5, 0.4))
 
+saveRDS(plot_validation_residuals_log, "saved_files/plot_validation_residuals_log.rds")
+print(plot_validation_residuals_log)
 
-saveRDS(plot_test_residuals_percent, "saved_files/plot_test_residuals_percent.rds")
-print(plot_test_residuals_percent)
 
-plot_test_residuals <- ggplot(residual_df_test, 
-                              aes(x = sales_price / 1e6, 
-                                  y = residual_sales_price / 1e6)) +
-                       geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
+
+plot_validation_residuals_percent <- ggplot(residual_df_validation, 
+                                            aes(x = sales_price / 1e6, 
+                                                y = residual_sales_price_percent)) +
+                                     geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
   
-                       # MAE line, decoupled from color mapping
-                       geom_smooth(aes(x = sales_price / 1e6, 
-                                       y = abs(residual_sales_price) / 1e6, 
-                                       linetype = "MAE"),
-                                   se = FALSE, 
-                                   color = "black", 
-                                   size = 0.8, 
-                                   inherit.aes = FALSE) +
+                                     # Absolute residuals line (MAPE) — inherit.aes = FALSE to decouple from color
+                                     geom_smooth(aes(x = sales_price / 1e6, 
+                                                     y = abs(residual_sales_price_percent), 
+                                                     linetype = "MAPE"),
+                                                 se = FALSE, 
+                                                 color = "black", 
+                                                 size = 0.8, 
+                                                 inherit.aes = FALSE) +
+  
+                                     # pm20 probability line 
+                                     geom_smooth(aes(x = sales_price / 1e6, 
+                                                     y = pm20 * 100, 
+                                                     linetype = "PM20"),
+                                                 se = FALSE, 
+                                                 color = "black", 
+                                                 size = 0.8, 
+                                                 inherit.aes = FALSE) +
+                                     scale_linetype_manual(name = NULL,
+                                                           values = c(MAPE = "solid", PM20 = "dashed"),
+                                                           guide = guide_legend(override.aes = list(color = "black", 
+                                                                                size = 0.8),
+                                                           nrow = 1, byrow = TRUE)) +
+                                     ylim(-100, 100) +
+                                     labs(x = "Sales price [million DKK]", 
+                                          y = "Percentage residuals [%]") +
+                                     theme(legend.position = c(0.5, 0.4))
+
+
+saveRDS(plot_validation_residuals_percent, "saved_files/plot_validation_residuals_percent.rds")
+print(plot_validation_residuals_percent)
+
+plot_validation_residuals <- ggplot(residual_df_validation, 
+                                    aes(x = sales_price / 1e6, 
+                                        y = residual_sales_price / 1e6)) +
+                             geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
+  
+                             # MAE line, decoupled from color mapping
+                             geom_smooth(aes(x = sales_price / 1e6, 
+                                             y = abs(residual_sales_price) / 1e6, 
+                                             linetype = "MAE"),
+                                         se = FALSE, 
+                                         color = "black", 
+                                         size = 0.8, 
+                                         inherit.aes = FALSE) +
                       
-                       scale_linetype_manual(name = NULL,
-                                             values = c(MAE = "solid"),
-                                             guide = guide_legend(override.aes = list(color = "black", size = 0.8), 
-                                                                  nrow = 1, 
-                                                                  byrow = TRUE)) +
-                       ylim(-3, 3) +
-                       labs(x = "Sales price [million DKK]", 
-                            y = "Residuals [million DKK]") +
-                       theme(legend.position = c(0.5, 0.4)) # inside top-right
+                             scale_linetype_manual(name = NULL,
+                                                   values = c(MAE = "solid"),
+                                                   guide = guide_legend(override.aes = list(color = "black", size = 0.8), 
+                                                   nrow = 1, 
+                                                   byrow = TRUE)) +
+                             ylim(-3, 3) +
+                             labs(x = "Sales price [million DKK]", 
+                                  y = "Residuals [million DKK]") +
+                             theme(legend.position = c(0.5, 0.4)) # inside top-right
 
 
 
-saveRDS(plot_test_residuals, "saved_files/plot_test_residuals.rds")
-print(plot_test_residuals)
+saveRDS(plot_validation_residuals, "saved_files/plot_validation_residuals.rds")
+print(plot_validation_residuals)
 
 ### Smoothed error plots for train, validation and test error
 
-residual_df$type <- with(residual_df,
-                         ifelse(test,
-                         "Test error",
-                         ifelse(validation,
-                                "Validation error",
-                                "Training error")))
+residual_df$type <- with(residual_df, ifelse(validation, "Validation error", "Training error"))
 
 
 plot_log_errors <- ggplot(residual_df) + 
@@ -996,7 +994,6 @@ plot_log_errors <- ggplot(residual_df) +
 saveRDS(plot_log_errors, "saved_files/plot_log_errors.rds")
 print(plot_log_errors)
 
-
 plot_percentage_errors <- ggplot(residual_df) + 
                           geom_smooth(aes(x = sales_date_numeric, 
                                           y = 100*as.integer(abs(residual_sales_price_percent) <= 20), 
@@ -1014,8 +1011,6 @@ plot_percentage_errors <- ggplot(residual_df) +
 saveRDS(plot_percentage_errors, "saved_files/plot_percentage_errors.rds")
 print(plot_percentage_errors)
 
-
-
 plot_errors <- ggplot(residual_df) + 
                geom_smooth(aes(x = sales_date_numeric, 
                                y = abs(residual_sales_price) / 1e6, 
@@ -1032,8 +1027,6 @@ plot_errors <- ggplot(residual_df) +
 saveRDS(plot_errors, "saved_files/plot_errors.rds")
 print(plot_errors)
 
-
-
 ```
 
 
@@ -1041,159 +1034,151 @@ print(plot_errors)
 
 ```{r Interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
 
-model <- models[[1]]
-model_data <- model.frame(model)
-
-#generate some fictitious properties. One in reference point, one close to coast near Esbjerg, one close to coast in North Jutland and one close to coast in Copenhagen
-grid <- as.data.frame(list(coordinate_east = c(697000, 462037, 469142, 725599), 
-                           coordinate_north = c(6150000, 6150225, 6322298, 6185920)))
-
-point_constraints <- list()
-for (sm in model$smooth) {
-  if (!is.null(sm$point.con)) {
-    point_constraints <- c(point_constraints, sm$point.con)
+make_interpretation_results <- function(model, model_name) {
+  
+  model_data <- model.frame(model)
+  
+  # generate fictitious properties
+  grid <- data.frame(coordinate_east = c(697000, 462037, 469142, 725599),
+                     coordinate_north = c(6150000, 6150225, 6322298, 6185920))
+  
+  point_constraints <- list()
+  for (sm in model$smooth) {
+    if (!is.null(sm$point.con)) {point_constraints <- c(point_constraints, sm$point.con)}
   }
-}
-
-# Get all variables used in model
-vars_in_model <- all.vars(formula(model))
-
-# Fill missing variables in grid using point constraints (or defaults)
-for (var in setdiff(vars_in_model, names(grid))) {
-  if (is.factor(model_data[[var]])) {
-    # Use reference level for factor
-    grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)),
-                          levels = levels(model_data[[var]]))
-  } else {
-    # Use point constraint if available, else use mean
-    value <- if (var %in% names(point_constraints)) {
-      point_constraints[[var]]
+  
+  vars_in_model <- all.vars(formula(model))
+  
+  # fill missing variables in grid
+  for (var in setdiff(vars_in_model, names(grid))) {
+    
+    if (is.factor(model_data[[var]])) {
+      
+      grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)),
+                            levels = levels(model_data[[var]]))
+      
     } else {
-      mean(model_data[[var]], na.rm = TRUE)
+      value <- if (var %in% names(point_constraints)) {
+        point_constraints[[var]]
+      } else {
+        mean(model_data[[var]], na.rm = TRUE)
+      }
+      grid[[var]] <- rep(value, nrow(grid))
     }
-    grid[[var]] <- rep(value, nrow(grid))
   }
-}
-
-#augment properties
-grid$coast_distance[2:4] <- 100 #close to coast 
-grid$year_built[2:4] <- 2020 #new house
-grid$municipality_type[2:4] <- factor(c("Provincial", "Rural", "Capital"))
-grid$type <- c("Reference", "Esbjerg", "Nordjylland", "Strandvejen")
-
-terms <- as.data.frame(predict.gam(model, grid, type = "terms"))
-
-
-adjustments <- terms %>% mutate(
   
-                         # Intercept
-                         standard_price = exp(as.vector(coef(model))[1]),
-        
-                         # Non-varying smooth
-                         adjustment_coordinates = exp(`s(coordinate_east,coordinate_north)`),
-        
-                         # Smooths with municipality_type interactions – 
-                         #might as well sum over all is it only non-zero for the relevant smooth
+  # augment properties
+  grid$coast_distance[2:4] <- 100
+  grid$year_built[2:4] <- 2020
+  grid$municipality_type[2:4] <- factor(c("Provincial", "Rural", "Capital"), levels = levels(model_data$municipality_type))
+  grid$type <- c("Reference", "Esbjerg", "Nordjylland", "Strandvejen")
+  
+  terms <- as.data.frame(predict.gam(model, grid, type = "terms"))
+  
+  # helper for summing possibly missing columns
+  sum_terms <- function(df, cols) {
+    cols_present <- intersect(cols, names(df))
+    if (length(cols_present) == 0) {return(rep(0, nrow(df)))}
+    rowSums(df[, cols_present, drop = FALSE])
+  }
+  
+  adjustments <- terms %>%
+                 mutate(standard_price = exp(as.vector(coef(model))[1]),
+      
+                        adjustment_coordinates = exp(`s(coordinate_east,coordinate_north)`),
+      
+                        # Smooths with municipality_type interactions – 
+                        #might as well sum over all is it only non-zero for the relevant smooth
                          
-                         adjustment_sales_date = exp(
-                            `s(sales_date_numeric):municipality_typeCapital` +
-                              `s(sales_date_numeric):municipality_typeRural` +
-                              `s(sales_date_numeric):municipality_typeCommuter` +
-                              `s(sales_date_numeric):municipality_typeProvincial` +
-                              `s(sales_date_numeric):municipality_typeLarge city`),
-        
-                         adjustment_year_built = exp(
-                              `s(year_built):municipality_typeCapital` +
-                                `s(year_built):municipality_typeRural` +
-                                `s(year_built):municipality_typeCommuter` +
-                                `s(year_built):municipality_typeProvincial` +
-                                `s(year_built):municipality_typeLarge city`),
+                        adjustment_sales_date = exp(`s(sales_date_numeric):municipality_typeCapital` +
+                                                    `s(sales_date_numeric):municipality_typeRural` +
+                                                    `s(sales_date_numeric):municipality_typeCommuter` +
+                                                    `s(sales_date_numeric):municipality_typeProvincial` +
+                                                    `s(sales_date_numeric):municipality_typeLarge city`),
+      
+                        adjustment_year_built = exp(`s(year_built):municipality_typeCapital` +
+                                                    `s(year_built):municipality_typeRural` +
+                                                    `s(year_built):municipality_typeCommuter` +
+                                                    `s(year_built):municipality_typeProvincial` +
+                                                    `s(year_built):municipality_typeLarge city`),
+      
+                        adjustment_year_rebuilt = exp(`s(year_rebuilt):municipality_typeCapital` +
+                                                      `s(year_rebuilt):municipality_typeRural` +
+                                                      `s(year_rebuilt):municipality_typeCommuter` +
+                                                      `s(year_rebuilt):municipality_typeProvincial` +
+                                                      `s(year_rebuilt):municipality_typeLarge city`),
+      
+                        adjustment_living_space = exp(`s(living_space):municipality_typeCapital` +
+                                                      `s(living_space):municipality_typeRural` +
+                                                      `s(living_space):municipality_typeCommuter` +
+                                                      `s(living_space):municipality_typeProvincial` +
+                                                      `s(living_space):municipality_typeLarge city`),
+      
+                        adjustment_lot_size = exp(`s(lot_size):municipality_typeCapital` +
+                                                  `s(lot_size):municipality_typeRural` +
+                                                  `s(lot_size):municipality_typeCommuter` +
+                                                  `s(lot_size):municipality_typeProvincial` +
+                                                  `s(lot_size):municipality_typeLarge city`),
+                                              
+                        adjustment_coast_distance = exp(`s(coast_distance)`),
           
-                         adjustment_year_rebuilt = exp(
-                              `s(year_rebuilt):municipality_typeCapital` +
-                                `s(year_rebuilt):municipality_typeRural` +
-                                `s(year_rebuilt):municipality_typeCommuter` +
-                                `s(year_rebuilt):municipality_typeProvincial` +
-                                `s(year_rebuilt):municipality_typeLarge city`),
+                        adjustment_lake_distance = exp(`s(lake_distance)`),
           
-                         adjustment_living_space = exp(
-                              `s(living_space):municipality_typeCapital` +
-                                `s(living_space):municipality_typeRural` +
-                                `s(living_space):municipality_typeCommuter` +
-                                `s(living_space):municipality_typeProvincial` +
-                                `s(living_space):municipality_typeLarge city`),
+                        adjustment_stream_distance = exp(`s(stream_distance)`),
           
-                         adjustment_lot_size = exp(
-                              `s(lot_size):municipality_typeCapital` +
-                                `s(lot_size):municipality_typeRural` +
-                                `s(lot_size):municipality_typeCommuter` +
-                                `s(lot_size):municipality_typeProvincial` +
-                                `s(lot_size):municipality_typeLarge city`),
+                        adjustment_road_distance = exp(`s(road_distance)`),
           
-                         adjustment_coast_distance = exp(`s(coast_distance)`),
+                        adjustment_highway_distance = exp(`s(highway_distance)`),
           
-                         adjustment_lake_distance = exp(`s(lake_distance)`),
+                        adjustment_train_station_distance = exp(`s(train_station_distance)`),
           
-                         adjustment_stream_distance = exp(`s(stream_distance)`),
+                        adjustment_railway_distance = exp(`s(railway_distance)`),
           
-                         adjustment_road_distance = exp(`s(road_distance)`),
+                        adjustment_windturbine_distance = exp(`s(windturbine_distance)`),
           
-                         adjustment_highway_distance = exp(`s(highway_distance)`),
+                        adjustment_ocean_view = exp(`s(ocean_view)`),
           
-                         adjustment_train_station_distance = exp(`s(train_station_distance)`),
+                        adjustment_lake_view = exp(`s(lake_view)`),
           
-                         adjustment_railway_distance = exp(`s(railway_distance)`),
+                        adjustment_forest_size = exp(`s(forest_size)`),
           
-                         adjustment_windturbine_distance = exp(`s(windturbine_distance)`),
-          
-                         adjustment_ocean_view = exp(`s(ocean_view)`),
-          
-                         adjustment_lake_view = exp(`s(lake_view)`),
-          
-                         adjustment_forest_size = exp(`s(forest_size)`),
-          
-                         adjustment_number_of_bathrooms = exp(
-                            `s(number_of_bathrooms):municipality_typeCapital` +
-                              `s(number_of_bathrooms):municipality_typeRural` +
-                              `s(number_of_bathrooms):municipality_typeCommuter` +
-                              `s(number_of_bathrooms):municipality_typeProvincial` +
-                              `s(number_of_bathrooms):municipality_typeLarge city`
-                          ),
-          
-          
-                         # Factor terms with interactions
-                         adjustment_municipality_type = exp(municipality_type),
-                         adjustment_house_type = exp(house_type + `house_type:municipality_type`),
-                         adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
-                         adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
-                         adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
-        
-                         adjustment_location = adjustment_coordinates * 
-                                               adjustment_sales_date * 
-                                               adjustment_lot_size *
-                                               adjustment_coast_distance * 
-                                               adjustment_lake_distance * 
-                                               adjustment_stream_distance *
-                                               adjustment_road_distance * 
-                                               adjustment_highway_distance * 
-                                               adjustment_train_station_distance *
-                                               adjustment_railway_distance * 
-                                               adjustment_windturbine_distance *
-                                               adjustment_ocean_view * 
-                                               adjustment_lake_view * 
-                                               adjustment_municipality_type,
-                         
-                         adjustment_property = adjustment_year_built * 
-                                               adjustment_year_rebuilt *
-                                               adjustment_living_space * 
-                                               adjustment_roof_type * 
-                                               adjustment_wall_type * 
-                                               adjustment_heating_type,
-                         
-                         adjustment_total = adjustment_location * adjustment_property,
-                         
+                        adjustment_number_of_bathrooms = exp(`s(number_of_bathrooms):municipality_typeCapital` +
+                                                             `s(number_of_bathrooms):municipality_typeRural` +
+                                                             `s(number_of_bathrooms):municipality_typeCommuter` +
+                                                             `s(number_of_bathrooms):municipality_typeProvincial` +
+                                                             `s(number_of_bathrooms):municipality_typeLarge city`),
+      
+                        #Factor terms with interactions
+                        adjustment_municipality_type = exp(municipality_type),
+                        adjustment_house_type = exp(house_type + `house_type:municipality_type`),
+                        adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
+                        adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
+                        adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
+ 
+                        adjustment_location = adjustment_coordinates *
+                                              adjustment_sales_date *
+                                              adjustment_lot_size *
+                                              adjustment_coast_distance *
+                                              adjustment_lake_distance *
+                                              adjustment_stream_distance *
+                                              adjustment_road_distance *
+                                              adjustment_highway_distance *
+                                              adjustment_train_station_distance *
+                                              adjustment_railway_distance *
+                                              adjustment_windturbine_distance *
+                                              adjustment_ocean_view *
+                                              adjustment_lake_view *
+                                              adjustment_municipality_type,
+      
+                        adjustment_property = adjustment_year_built *
+                                              adjustment_year_rebuilt *
+                                              adjustment_living_space *
+                                              adjustment_roof_type *
+                                              adjustment_wall_type *
+                                              adjustment_heating_type,
+      
+                        adjustment_total = adjustment_location * adjustment_property,
                         predicted_price = standard_price * adjustment_total) %>%
-  
                         select(standard_price,
                                adjustment_municipality_type,
                                adjustment_coordinates,
@@ -1222,24 +1207,19 @@ adjustments <- terms %>% mutate(
                                adjustment_property,
                                adjustment_total,
                                predicted_price)
+  
+  grid_out <- grid %>% select(coast_distance, year_built, municipality_type, type)
+  
+  bind_cols(grid_out, adjustments) %>% mutate(Model = model_name, .before = 1)
+}
 
+results_all_models <- bind_rows(
+  lapply(names(models), function(model_name) {
+    make_interpretation_results(models[[model_name]], model_name)
+  })
+)
 
-grid <- grid %>% select(coast_distance, year_built, municipality_type, type)
-
-adjustments <- adjustments %>% 
-               select(standard_price, 
-                      adjustment_municipality_type, 
-                      adjustment_coordinates, 
-                      adjustment_year_built, 
-                      adjustment_coast_distance, 
-                      adjustment_location, 
-                      adjustment_property, 
-                      adjustment_total, 
-                      predicted_price)
-
-results <- bind_cols(grid, adjustments)
-
-str(results)
+saveRDS(results_all_models, "saved_files/results_interpretation_all_models.rds")
 
 ```
 
@@ -1251,30 +1231,28 @@ The code below flags outliers based on both the GAM-based uncertainty estimates 
 
 ```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
-test_set <- dataset %>% filter(test_set)
-
 predictions <- imap(models, function(model, name) {
-  preds <- predict.gam(model, test_set, type = "link", se.fit = TRUE)
+  preds <- predict.gam(model, dataset_properties, type = "link", se.fit = TRUE)
   tibble(!!paste0("pred_", name) := as.vector(preds$fit),
          !!paste0("sigma_", name) := as.vector(preds$se.fit))
 })
 
 pred_matrix <- bind_cols(predictions)
-test_set_predictions <- bind_cols(test_set, pred_matrix)
-saveRDS(test_set_predictions, "saved_files/test_set_predictions.rds")
+property_predictions <- bind_cols(dataset_properties, pred_matrix)
+saveRDS(property_predictions, "saved_files/property_predictions.rds")
 
-pred_cols <- grep("^pred_", names(test_set_predictions), value = TRUE)
-sigma_limit <- 0.1
+pred_cols <- grep("^pred_", names(property_predictions), value = TRUE)
+sigma_limit <- 0.2
 
-test_set_predictions <- test_set_predictions %>%
+property_predictions <- property_predictions %>%
                         rowwise() %>%
                         mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols))), # ensemble spread
                                sigma_combined = pmax(sigma_Model1, sigma_Ensemble),   # max-rule
                                above_limit    = sigma_combined > sigma_limit) %>%
                         ungroup()
 
-n_total <- nrow(test_set_predictions)
-n_flagged <- sum(test_set_predictions$above_limit)
+n_total <- nrow(property_predictions)
+n_flagged <- sum(property_predictions$above_limit)
 pct_flagged <- 100 * n_flagged / n_total
 
 
@@ -1286,29 +1264,29 @@ label_expr <- sprintf(
   sigma_limit
 )
 
-plot_uncertainties <- ggplot(test_set_predictions, aes(x = sigma_Model1, y = sigma_Ensemble)) +
-  geom_point(alpha = 0.1, size = 0.8, color = "#08306B") +
-  geom_point(data = subset(test_set_predictions, above_limit),
-             shape = 21, fill = NA, color = "#08306B",
-             size = 1.5, stroke = 0.7, alpha = 1.0) +
-  geom_density_2d(color = "grey80", linewidth = 0.6, alpha = 0.8) +
-  geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
-  geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
-  annotate("label",
-           x = 0.075, y = 0.24,
-           label = label_expr,
-           parse = TRUE,
-           hjust = 0, vjust = 1,
-           size = 3.5, label.size = 0.2) +
-  coord_equal(xlim = c(0, 0.25), ylim = c(0, 0.25), expand = FALSE) +
-  labs(x = expression(sigma["Model 1"]),
-       y = expression(sigma["Ensemble"]))
+plot_uncertainties <- ggplot(property_predictions, aes(x = sigma_Model1, y = sigma_Ensemble)) +
+                      geom_point(alpha = 0.1, size = 0.8, color = "#08306B") +
+                      geom_point(data = subset(property_predictions, above_limit),
+                                 shape = 21, fill = NA, color = "#08306B",
+                                 size = 1.5, stroke = 0.7, alpha = 1.0) +
+                      geom_density_2d(color = "grey80", linewidth = 0.6, alpha = 0.8) +
+                      geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
+                      geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
+                      annotate("label",
+                               x = 0.075, y = 0.24,
+                               label = label_expr,
+                               parse = TRUE,
+                               hjust = 0, vjust = 1,
+                               size = 3.5, label.size = 0.2) +
+                      coord_equal(xlim = c(0, 0.5), ylim = c(0, 0.5), expand = FALSE) +
+                      labs(x = expression(sigma["Model 1"]),
+                           y = expression(sigma["Ensemble"]))
 
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
 print(plot_uncertainties)
 
 #Plot outliers geographically
-outliers <- test_set_predictions %>% filter(above_limit)
+outliers <- property_predictions %>% filter(above_limit)
 
 plot_outliers_geographically <- ggplot() +
                                 # Add land/ocean contour
@@ -1357,57 +1335,185 @@ saveRDS(plot_appraise, "saved_files/plot_appraise.rds")
 
 The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the test error.
 
-```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000)
+k_values <- k_values[k_values <= k_spatial]
+  
+model_grid_basis <- expand.grid(fold = 1:N, k_spatial = k_values)
+
 
 if (load) {
+  
   models_basis <- readRDS("saved_files/models_basis.rds")
+  
 } else {
   
-  folds <- 1:N
-  k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000)
-  k_values <- k_values[k_values <= k_spatial]
-
-  model_grid <- expand.grid(fold = folds, k_spatial = k_values)
+  models_basis <- future_lapply(seq_len(nrow(model_grid_basis)), function(idx) {
+    row <- model_grid_basis[idx, ]
+    fit_fold(
+      i = row$fold,
+      data = dataset_sales_cv,
+      k_spatial = row$k_spatial,
+      k_other = k_other,
+      fraction = 1.0,
+      checkpoint_prefix = paste0("basis_k", row$k_spatial)
+    )
+  })
   
-  models_basis <- future_lapply(1:nrow(model_grid), function(idx) {
-    row <- model_grid[idx, ]
-    fit_fold(row$fold, row$k_spatial)})
-  
-  names(models_basis) <- paste0("Model", model_grid$fold, "_", model_grid$k_spatial)
+  names(models_basis) <- paste0("Model", model_grid_basis$fold, "_", model_grid_basis$k_spatial)
   saveRDS(models_basis, "saved_files/models_basis.rds")
 }
 
+get_residuals_grid <- function(models, dataset, grid_df, grid_name) {
+  
+  residual_list <- future_lapply(seq_along(models), function(i) {
+    model_name <- names(models)[i]
+    model <- models[[i]]
+    row <- grid_df[i, ]
+    fold <- row$fold
+    
+    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    
+    tibble(sales_price = dataset$sales_price,
+           predicted_sales_price = predicted_sales_price,
+           residual_sales_price = predicted_sales_price - dataset$sales_price,
+           residual_sales_price_percent = (predicted_sales_price - dataset$sales_price) / dataset$sales_price * 100,
+           residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
+           validation = dataset$validation_set == fold,
+           municipality_type = dataset$municipality_type,
+           Model = model_name,
+           value = row[[grid_name]])
+  })
+  
+  bind_rows(residual_list)
+}
 
+residual_df_basis <- get_residuals_grid(models = models_basis,
+                                        dataset = dataset_sales_cv,
+                                        grid_df = model_grid_basis,
+                                        grid_name = "k_spatial")
 
-
-residual_df_basis <- get_residuals(models_basis, dataset)
-residual_df_basis$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df_basis$Model))
-residual_df_basis$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df_basis$Model))
 saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
 
-performance <- residual_df_basis %>% 
-               mutate(dataset_type = case_when(test ~ "Test",
-                                               validation ~ "Validation",
-                                               TRUE ~ "Training")) %>% 
-                      group_by(dataset_type, municipality_type, k, Model) %>%
-               summarise(MALE = mean(abs(residual_sales_price_log)),
-                         .groups = "drop")
+performance_basis <- residual_df_basis %>%
+                     mutate(type = if_else(validation, "Validation error", "Training error")) %>%
+                     group_by(type, municipality_type, value) %>%
+                     summarise(MALE = mean(abs(residual_sales_price_log)),
+                               .groups = "drop") %>%
+                     rename(k = value)
 
-performance_test <- performance %>% filter(dataset_type == "Test")
-
-# Plot
-plot_basis <- ggplot(performance_test, aes(x = k, y = MALE, color = municipality_type, lty = Model)) +
+plot_basis <- ggplot(performance_basis,
+                     aes(x = k, y = MALE, color = municipality_type, lty = type)) +
               geom_line() +
               geom_point() +
               labs(x = "Number of spatial basis functions (k)",
                    y = "MALE",
-                   color = "Municipality type") 
+                   color = "Municipality type")
 
 saveRDS(plot_basis, "saved_files/plot_basis.rds")
 print(plot_basis)
 
+```
+
+
+
+### Number of folds for model ensemble
+The code below fits the model ensemble for numbers of fold for the model ensembles and examines the ensemble spread af a function of this.
+
+```{r Number of folds, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+if (load) {
+  models_folds <- readRDS("saved_files/models_folds.rds")
+  data_folds <- readRDS("saved_files/data_folds.rds")
+} else {
+
+  N_values <- 2:10
+
+  data_folds <- lapply(N_values, function(N_current) {assign_cv_folds(dataset_sales, N = N_current, seed = 123)})
+  
+  names(data_folds) <- paste0("N", N_values)
+
+  models_folds <- lapply(seq_along(N_values), function(j) {
+    
+    N_current <- N_values[j]
+    data_current <- data_folds[[j]]
+
+    models_current <- future_lapply(1:N_current, function(i) {
+      
+      fit_fold(i = i,
+               data = data_current,
+               k_spatial = k_spatial,
+               k_other = k_other,
+               fraction = 1.0,
+               checkpoint_prefix = paste0("N", N_current))
+      })
+
+    names(models_current) <- paste0("Model", 1:N_current)
+    models_current
+    
+    })
+  
+  
+  names(models_folds) <- paste0("N", N_values)
+
+  saveRDS(models_folds, "saved_files/models_folds.rds")
+  saveRDS(data_folds, "saved_files/data_folds.rds")
+}
+
+get_ensemble_spread <- function(model_list, dataset, N_value) {
+
+  predictions <- imap(model_list, function(model, name) {
+    preds <- predict.gam(model, dataset, type = "link", se.fit = FALSE)
+    tibble(!!paste0("pred_", name) := as.vector(preds))
+  })
+
+  pred_matrix <- bind_cols(predictions)
+  pred_cols <- grep("^pred_", names(pred_matrix), value = TRUE)
+
+  spread_df <- bind_cols(dataset, pred_matrix) %>%
+               rowwise() %>%
+               mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols)))) %>%
+               ungroup() %>%
+               mutate(N = N_value)
+
+  spread_df
+}
+
+property_spread_folds <- bind_rows(
+  lapply(names(models_folds), function(name) {
+    N_current <- as.numeric(sub("^N", "", name))
+    get_ensemble_spread(
+      model_list = models_folds[[name]],
+      dataset = dataset_properties,
+      N_value = N_current
+    )
+  })
+)
+
+saveRDS(property_spread_folds, "saved_files/property_spread_folds.rds")
+
+spread_summary <- property_spread_folds %>%
+                  group_by(N) %>%
+                  summarise(q05 = quantile(sigma_Ensemble, 0.05, na.rm = TRUE),
+                            median = median(sigma_Ensemble, na.rm = TRUE),
+                            q95 = quantile(sigma_Ensemble, 0.95, na.rm = TRUE),
+                            mean = mean(sigma_Ensemble, na.rm = TRUE),
+                            .groups = "drop")
+
+saveRDS(spread_summary, "saved_files/spread_summary_folds.rds")
+
+plot_folds_spread <- ggplot(spread_summary, aes(x = N)) +
+                     geom_ribbon(aes(ymin = q05, ymax = q95), alpha = 0.2, fill = "grey70") +
+                     geom_line(aes(y = median), linewidth = 1) +
+                     geom_point(aes(y = median), size = 2) +
+                     labs(x = "Number of folds",
+                          y = expression(sigma[Ensemble]),
+                          title = "Ensemble spread across valuation properties by number of folds")
+
+saveRDS(plot_folds_spread, "saved_files/plot_folds_spread.rds")
+print(plot_folds_spread)
 
 ```
+
 
 
 ### The Distributional Assumption
@@ -2089,63 +2195,3 @@ saveRDS(plot_interplay, "saved_files/plot_interplay.rds")
 print(plot_interplay)
 
 ```
-
-### Number of folds for model ensemble
-
-The code below fits the model ensemble for numbers of fold for the model ensembles and examines the ensemble spread af a function of this.
-
-```{r Number of folds, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
-
-if (load) {
-  models_folds <- readRDS("saved_files/models_folds.rds")
-} else {
-  
-  folds <- 1:N
-  k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000)
-  k_values <- k_values[k_values <= k_spatial]
-
-  model_grid <- expand.grid(fold = folds, k_spatial = k_values)
-  
-  models_basis <- future_lapply(1:nrow(model_grid), function(idx) {
-    row <- model_grid[idx, ]
-    fit_fold(row$fold, row$k_spatial)})
-  
-  names(models_basis) <- paste0("Model", model_grid$fold, "_", model_grid$k_spatial)
-  saveRDS(models_basis, "saved_files/models_basis.rds")
-}
-
-
-
-
-residual_df <- get_residuals(models_basis, dataset)
-
-residual_df$k <- as.numeric(sub(".*_(\\d+)$", "\\1", residual_df$Model))
-residual_df$Model <- sub("^Model", "Model ", sub("(_.*)$", "", residual_df$Model))
-
-
-performance <- residual_df %>% 
-               mutate(dataset_type = case_when(test ~ "Test",
-                                               validation ~ "Validation",
-                                               TRUE ~ "Training")) %>% 
-                      group_by(dataset_type, municipality_type, k, Model) %>%
-               summarise(MALE = mean(abs(residual_sales_price_log)),
-                         .groups = "drop")
-
-performance_test <- performance %>% filter(dataset_type == "Test")
-
-# Plot
-plot_basis <- ggplot(performance_test, aes(x = k, y = MALE, color = municipality_type, lty = Model)) +
-              geom_line() +
-              geom_point() +
-              labs(x = "Number of spatial basis functions (k)",
-                   y = "MALE",
-                   color = "Municipality type") 
-
-saveRDS(plot_basis, "saved_files/plot_basis.rds")
-print(plot_basis)
-
-
-```
-
-
-
