@@ -1859,7 +1859,10 @@ dummy_model <- dummyVars(~ roof_type +
                            wall_type +
                            heating_type +
                            house_type +
-                           municipality_type,
+                           municipality_type + 
+                           municipality +
+                           province +
+                           region,
                          data = other_sales)
 
 categorical_encoded <- predict(dummy_model, newdata = other_sales)
@@ -1868,6 +1871,8 @@ X <- other_sales %>%
      select(coordinate_east,
             coordinate_north,
             number_of_bathrooms,
+            number_of_rooms,
+            number_of_floors,
             year_built,
             year_rebuilt,
             living_space,
@@ -1934,6 +1939,8 @@ X <- double_sales %>%
      select(coordinate_east,
             coordinate_north,
             number_of_bathrooms,
+            number_of_rooms,
+            number_of_floors,
             year_built,
             year_rebuilt,
             living_space,
@@ -1949,7 +1956,7 @@ X <- double_sales %>%
             forest_size,
             ocean_view,
             lake_view) %>%
-     as.matrix()
+      as.matrix()
 
 X_full <- cbind(X, categorical_encoded)
 
