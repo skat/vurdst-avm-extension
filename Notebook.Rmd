@@ -1762,11 +1762,9 @@ double_sales <- double_sales %>%
                 ungroup()
 
 
+### Fit models to other sales and evaluate on double sales
 
-## Fit models to other sales and evaluate on double sales
-
-
-## Indexation
+# 1. Indexation model
 
 if (load){
 
@@ -1799,8 +1797,16 @@ other_sales <- other_sales %>% mutate(log_sales_price = log(sales_price),
                                       log_sales_price_indexed = log_sales_price + time_adjustment,
                                       sales_price_indexed = exp(log_sales_price_indexed))
 
+double_sales_lagged <- double_sales %>%
+                       arrange(id, sales_date) %>%
+                       group_by(id) %>%
+                       mutate(sales_price_diff_indexed_log = log_sales_price_indexed - lag(log_sales_price_indexed),
+                              avg_price = (sales_price_indexed + lag(sales_price_indexed)) / 2,
+                              sales_date_diff = sales_date_numeric - lag(sales_date_numeric)) %>%
+                       ungroup()
 
-### GAM-model 
+
+# 2. GAM model
 
 if (load){
 
@@ -1840,12 +1846,14 @@ if (load){
 
 double_sales <- double_sales %>% 
                 mutate(residuals_gam = 
-                       predict(gam_model, double_sales, type = "link") - log_sales_price_indexed)
+                       log_sales_price_indexed - predict(gam_model, double_sales, type = "link"))
+
+other_sales <- other_sales %>% 
+               mutate(residuals_gam = 
+                      log_sales_price_indexed - predict(gam_model, other_sales, type = "link"))
 
 
-
-
-### XGboost
+# 3. XGboost Models (fitted to log sales prices and GAM residuals)
 
 dummy_model <- dummyVars(~ roof_type +
                            wall_type +
@@ -1882,9 +1890,11 @@ X_full <- cbind(X, categorical_encoded)
 if (load){
 
   xgb_model <- readRDS("saved_files/xgb_model.rds")
+  xgb_model_residuals <- readRDS("saved_files/xgb_model_residuals.rds")
 
 } else{
 
+  #on log sales price
   dtrain <- xgb.DMatrix(data = X_full, label = other_sales$log_sales_price_indexed)
 
   xgb_model <- xgboost(
@@ -1899,9 +1909,24 @@ if (load){
   )
 
   saveRDS(xgb_model, "saved_files/xgb_model.rds")
+  
+  #on log residuals
+  dtrain <- xgb.DMatrix(data = X_full, label = other_sales$residuals_gam)
+
+  xgb_model_residuals <- xgboost(
+    data = dtrain,
+    objective = "reg:squarederror",
+    nrounds = 1000,
+    max_depth = 12,
+    eta = 0.1,
+    subsample = 0.8,
+    colsample_bytree = 0.8,
+    verbose = 1
+  )
+
+  saveRDS(xgb_model_residuals, "saved_files/xgb_model_residuals.rds")
 
 }
-
 
 categorical_encoded <- predict(dummy_model, newdata = double_sales)
 
@@ -1929,20 +1954,11 @@ X <- double_sales %>%
 X_full <- cbind(X, categorical_encoded)
 
 double_sales <- double_sales %>% 
-                mutate(residuals_xgb = predict(xgb_model, X_full) - log_sales_price_indexed)
+                mutate(residuals_xgb = log_sales_price_indexed - predict(xgb_model, X_full),
+                       residuals_hybrid = residuals_gam - predict(xgb_model_residuals, X_full))
 
 
-
-double_sales_lagged <- double_sales %>%
-                       arrange(id, sales_date) %>%
-                       group_by(id) %>%
-                       mutate(sales_price_diff_indexed_log = log_sales_price_indexed - lag(log_sales_price_indexed),
-                              avg_price = (sales_price_indexed + lag(sales_price_indexed)) / 2,
-                              sales_date_diff = sales_date_numeric - lag(sales_date_numeric)) %>%
-                       ungroup()
-
-
-### Noise model
+# 4. Noise model
 
 if (load){
 
@@ -1960,46 +1976,42 @@ if (load){
 }
 
 
-
+### Make scatter plot with errors
 double_sales_lagged$residuals_noise <- NA
 double_sales_lagged$residuals_noise[which(!is.na(double_sales_lagged$sales_date_diff))] <- residuals(noise_model)/sqrt(2)
 
-
-
-### Make scatter plot with errors
 smooth_data <- bind_rows(double_sales_lagged %>% 
-                         transmute(x = avg_price / 1e6, y = abs(residuals_noise), model = "Market noise"),
+                         transmute(x = avg_price / 1e6, y = abs(residuals_noise), Model = "Market noise"),
                          double_sales %>%
-                         transmute(x = sales_price / 1e6, y = abs(residuals_gam), model = "GAM"),
+                         transmute(x = sales_price / 1e6, y = abs(residuals_gam), Model = "GAM"),
                          double_sales %>%
-                         transmute(x = sales_price / 1e6, y = abs(residuals_xgb), model = "XGBoost"))
+                         transmute(x = sales_price / 1e6, y = abs(residuals_xgb), Model = "XGBoost"),
+                         double_sales %>%
+                         transmute(x = sales_price / 1e6, y = abs(residuals_hybrid), Model = "Hybrid model"))
 
 plot_market_noise <- ggplot(data = double_sales_lagged,
-                     aes(x = avg_price / 1e6, y = residuals_noise, color = municipality_type)) +
+                     aes(x = avg_price / 1e6, y = residuals_noise)) +
                      geom_point(size = 0.3) +
                      geom_smooth(data = smooth_data,
-                                 aes(x = x, y = y, linetype = model),
+                                 aes(x = x, y = y, color = Model),
                                  method = "gam", formula = y ~ s(x),
                                  se = TRUE, 
-                                 color = "black", 
                                  linewidth = 1) +
                      labs(x = "Average price [million DKK]",
                           y = "Log residuals",
-                          color = "Municipality type",
+                          color = "Model",
                           linetype = NULL) +
                      ylim(-1, 1) +
                      xlim(0, 10) +
-                     scale_linetype_manual(values = c("Market noise" = "solid",
-                                                      "GAM" = "dashed",
-                                                      "XGBoost" = "dotted")) +
                      theme_minimal() +
                      theme(text = element_text(size = 12),
-                           legend.position = c(0.85, 0.65),
+                           legend.position = c(0.95, 0.65),
                            legend.title = element_text(size = 12),  
                            legend.text = element_text(size = 10))
 
 saveRDS(plot_market_noise, "saved_files/plot_market_noise.rds")
 print(plot_market_noise)
+
 
 
 ```
