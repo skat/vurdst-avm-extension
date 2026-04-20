@@ -69,12 +69,14 @@ This notebook provides a walkthrough of the analysis and results described in th
 # Dataset 
 
 ## 1. Description
-The analysis is based on a dataset of single family home sales in Denmark in the period 01/01/2014-01/01/2024, which is included as .csv-file in the same repository containing this notebook. The dataset is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
+The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from the period 01/01/2014-01/01/2024. The dataset, included as a .rds file in this repository, is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 dataset <- readRDS("dataset.rds")
 str(dataset)
+#The three types included in the dataset. This notebook only uses Property and Property Sales
+table(dataset$type)
 
 ```
 
@@ -247,7 +249,7 @@ which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 
 ```
 
-## 3. Cross-Validation and Test Set
+## 3. Cross-Validation 
 A simple 4-fold cross-validation split is implemented in the code below. 
 
 ```{r Test set and cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
