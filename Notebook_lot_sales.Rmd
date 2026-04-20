@@ -75,8 +75,6 @@ The analysis is based on a dataset of single family home sales, single family lo
 
 dataset <- readRDS("dataset.rds")
 str(dataset)
-#The three types included in the dataset. 
-table(dataset$type)
 
 ```
 
@@ -127,10 +125,22 @@ which(is.na(subset(dataset, type == "Lot sale")), arr.ind = TRUE)
 
 ```
 
-## 3. Cross-Validation
+## 3. Overview of property types
 A simple 4-fold cross-validation split is implemented in the code below. 
 
-```{r Test set and cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Overview of property types, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+#The three types included in the dataset. This notebook only uses Property and Property Sales
+table(dataset$type)
+
+
+
+```
+
+
+## 4. Cross-Validation
+A simple 4-fold cross-validation split is implemented in the code below. 
+
+```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 # pick out sales and properties
 dataset_sales <- dataset %>% filter(type == "Property sale")
 dataset_properties <- dataset %>% 
