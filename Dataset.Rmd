@@ -32,7 +32,7 @@ if (!requireNamespace("core", quietly = TRUE)) {
 library(konstant)
 library(core)
 
-load <- TRUE 
+load <- FALSE 
 antag_historik <- TRUE
 variable <- c("salg_id_ice",
               "vurderingsejendom_id_ice",
