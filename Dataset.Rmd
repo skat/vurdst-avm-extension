@@ -120,7 +120,10 @@ variable <- c("salg_id_ice",
               "enhed.opvarmningsmiddel",
               "enhed.varmeinstallation",
               "enhed.toiletforhold",
-              "enhed.supplerendevarme")
+              "enhed.supplerendevarme",
+              "etageareal",
+              "restareal",
+              "bebyggelsesprocent")
 
 
 process_vurderingsejendomme_chunk <- function(file, variable) {
@@ -224,16 +227,51 @@ if (load) {
                                          list_col = "vurderingsgrunde",
                                          subelementer = "delgrund",
                                          keep_cols ="salg_id_ice")
-    
+  
   vurinfo <- udtraek_element(data = markedsdata,
                              col = "vurinfo")
+  
+  #udtraek salgsflag
+  vurinfo[["salg_flag"]] <- map_chr(.x = vurinfo[["salg.salg_flag"]],
+                                    .f = function(x){paste(x[["flag_rule_id"]], collapse = ",")})
+  
+  
+  #Tilfoej informationer fra deljordstykker. Her mistes en del delgrunde
+  deljordstykker <- udtraek_element(data = delgrunde,
+                                    col = "delgrund.deljordstykke",
+                                    keep_cols = "delgrund.delgrund_ids")
+  
+  
+  plandata <- udtraek_element(data = deljordstykker,
+                              col = "deljordstykke.plandata",
+                              keep_cols = c("delgrund.delgrund_ids",
+                                            "deljordstykke.registreret_areal",
+                                            "deljordstykke.registreret_areal_uden_vej"))
+  
+         
+  plandata <- plandata %>% 
+              group_by(delgrund.delgrund_ids) %>%
+              mutate(unikke_plankoder_delgrund = list(unique(plandata.specifikanvendelseskategori))) %>%
+              ungroup() %>% 
+              mutate(etageareal = deljordstykke.registreret_areal * plandata.maksbebygpct / 100,
+                     restareal = pmax(0, deljordstykke.registreret_areal_uden_vej - plandata.etageareal)) %>% 
+              select(delgrund.delgrund_ids,
+                     plandata.deljordstykke_id_ice,
+                     unikke_plankoder_delgrund,
+                     plandata.maksbebygpct, 
+                     plandata.etageareal,
+                     restareal) %>% 
+              unique() %>% 
+              add_count(delgrund.delgrund_ids) %>% 
+              filter(n == 1)
 
-  vurinfo[["salg_flag"]] <- map_chr(
-    .x = vurinfo[["salg.salg_flag"]],
-    .f = function(x){paste(x[["flag_rule_id"]], collapse = ",")
-    })
-    
-
+  
+  delgrunde <- inner_join(delgrunde, plandata, by = c("delgrund.delgrund_ids"))
+  
+  #udtraek delgrunde uden bygninger
+  delgrunde <- delgrunde %>% filter(!(vurderingsejendom_id_ice %in% c(enheder[["vurderingsejendom_id_ice"]], 
+                                                                      bygninger[["vurderingsejendom_id_ice"]],
+                                                                      tekniske_anlaeg[["vurderingsejendom_id_ice"]])))
   #saml ejendomssalg
   ejendomssalg_2020 <- left_join(x = enheder,
                                  y = vurinfo,
@@ -242,10 +280,6 @@ if (load) {
                                         "df_virkningstid"))
   
   #saml grundsalg
-  delgrunde <- delgrunde %>% filter(!(vurderingsejendom_id_ice %in% c(enheder[["vurderingsejendom_id_ice"]], 
-                                                                      bygninger[["vurderingsejendom_id_ice"]],
-                                                                      tekniske_anlaeg[["vurderingsejendom_id_ice"]])))
-  
   grundsalg_2020 <- left_join(x = delgrunde,
                               y = vurinfo,
                               by = c("salg_id_ice",
@@ -270,10 +304,12 @@ if (load) {
                                        subelementer = "enhed",
                                        keep_cols = "salg_id_ice")
   
+  
   bygninger <- udtraek_nestede_elementer(data = markedsdata,
                                          list_col = "vurderingsenheder",
                                          subelementer = "bygning",
                                          keep_cols = "salg_id_ice")
+  
 
   tekniske_anlaeg <- udtraek_nestede_elementer(data = markedsdata,
                                                list_col = "vurderingsenheder",
@@ -284,16 +320,51 @@ if (load) {
                                          list_col = "vurderingsgrunde",
                                          subelementer = "delgrund",
                                          keep_cols ="salg_id_ice")
-
+  
   vurinfo <- udtraek_element(data = markedsdata,
                              col = "vurinfo")
+  
+  #udtraek salgsflag
+  vurinfo[["salg_flag"]] <- map_chr(.x = vurinfo[["salg.salg_flag"]],
+                                    .f = function(x){paste(x[["flag_rule_id"]], collapse = ",")})
+  
+  
+  #Tilfoej informationer fra deljordstykker. Her mistes en del delgrunde
+  deljordstykker <- udtraek_element(data = delgrunde,
+                                    col = "delgrund.deljordstykke",
+                                    keep_cols = "delgrund.delgrund_ids")
+  
+  
+  plandata <- udtraek_element(data = deljordstykker,
+                              col = "deljordstykke.plandata",
+                              keep_cols = c("delgrund.delgrund_ids",
+                                            "deljordstykke.registreret_areal",
+                                            "deljordstykke.registreret_areal_uden_vej"))
+  
+         
+  plandata <- plandata %>% 
+              group_by(delgrund.delgrund_ids) %>%
+              mutate(unikke_plankoder_delgrund = list(unique(plandata.specifikanvendelseskategori))) %>%
+              ungroup() %>% 
+              mutate(etageareal = deljordstykke.registreret_areal * plandata.maksbebygpct / 100,
+                     restareal = pmax(0, deljordstykke.registreret_areal_uden_vej - plandata.etageareal)) %>% 
+              select(delgrund.delgrund_ids,
+                     plandata.deljordstykke_id_ice,
+                     unikke_plankoder_delgrund,
+                     plandata.maksbebygpct, 
+                     plandata.etageareal,
+                     restareal) %>% 
+              unique() %>% 
+              add_count(delgrund.delgrund_ids) %>% 
+              filter(n == 1)
 
-  vurinfo[["salg_flag"]] <- map_chr(
-    .x = vurinfo[["salg.salg_flag"]],
-    .f = function(x){
-      paste(x[["flag_rule_id"]], collapse = ",")
-    }
-  )
+  
+  delgrunde <- inner_join(delgrunde, plandata, by = c("delgrund.delgrund_ids"))
+  
+  #udtraek delgrunde uden bygninger
+  delgrunde <- delgrunde %>% filter(!(vurderingsejendom_id_ice %in% c(enheder[["vurderingsejendom_id_ice"]], 
+                                                                      bygninger[["vurderingsejendom_id_ice"]],
+                                                                      tekniske_anlaeg[["vurderingsejendom_id_ice"]])))
 
   #saml ejendomssalg
   ejendomssalg_2024 <- left_join(x = enheder,
@@ -301,12 +372,7 @@ if (load) {
                                  by = c("salg_id_ice",
                                         "vurderingsejendom_id_ice",
                                         "df_virkningstid"))
-  
   #saml grundsalg
-  delgrunde <- delgrunde %>% filter(!(vurderingsejendom_id_ice %in% c(enheder[["vurderingsejendom_id_ice"]], 
-                                                                      bygninger[["vurderingsejendom_id_ice"]],
-                                                                      tekniske_anlaeg[["vurderingsejendom_id_ice"]])))
-  
   grundsalg_2024 <- left_join(x = delgrunde,
                               y = vurinfo,
                               by = c("salg_id_ice",
@@ -359,14 +425,23 @@ if (antag_historik){
   
   ejendomssalg <- ejendomssalg %>%
                   left_join(vurderingsejendomme %>%
-                            select(vurderingsejendom_id_ice,
-                                   enhed.enhed_id_ice,
-                                   all_of(antag_historik_felter)) %>%
+                  select(vurderingsejendom_id_ice,
+                         enhed.enhed_id_ice, all_of(antag_historik_felter)) %>%
                   rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)),
-                              by = c("vurderingsejendom_id_ice", "enhed.enhed_id_ice")) %>%
+                                by = c("vurderingsejendom_id_ice", "enhed.enhed_id_ice")) %>%
                   mutate(vurinfo.udsigtslaengde_hav = coalesce(vurinfo.udsigtslaengde_hav_ny, vurinfo.udsigtslaengde_hav),
                          vurinfo.udsigtslaengde_soe = coalesce(vurinfo.udsigtslaengde_soe_ny, vurinfo.udsigtslaengde_soe)) %>%
                   select(-ends_with("_ny"))
+  
+  grundsalg <- grundsalg %>%
+               left_join(vurderingsejendomme %>%
+               select(vurderingsejendom_id_ice, all_of(antag_historik_felter)) %>%
+               slice(1) %>% 
+               rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)),
+                            by = c("vurderingsejendom_id_ice")) %>%
+               mutate(vurinfo.udsigtslaengde_hav = coalesce(vurinfo.udsigtslaengde_hav_ny, vurinfo.udsigtslaengde_hav),
+                      vurinfo.udsigtslaengde_soe = coalesce(vurinfo.udsigtslaengde_soe_ny, vurinfo.udsigtslaengde_soe)) %>%
+               select(-ends_with("_ny"))
   
 }
 

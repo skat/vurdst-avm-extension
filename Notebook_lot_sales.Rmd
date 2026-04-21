@@ -121,7 +121,6 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
 
 #check that there are no remaining NAs in sales data
 which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
-which(is.na(subset(dataset, type == "Lot sale")), arr.ind = TRUE)
 
 ```
 
@@ -133,7 +132,38 @@ A simple 4-fold cross-validation split is implemented in the code below.
 table(dataset$type)
 
 
+plot <- ggplot() +
+        geom_contour(data = coordinate_grid,
+                     aes(x = coordinate_east,
+                         y = coordinate_north,
+                         z = as.numeric(!ocean)),
+                         color = "black",
+                         size = 0.1) +
+        geom_point(data = dataset,
+                   aes(x = coordinate_east,
+                       y = coordinate_north,
+                       color = type),
+                       size = 1.0) +
+        coord_fixed() +
+        theme_void(base_size = 10)
 
+
+ggplot(dataset, aes(coordinate_east, coordinate_north)) +
+  geom_contour(
+    data = coordinate_grid,
+    aes(
+      x = coordinate_east,
+      y = coordinate_north,
+      z = as.numeric(!ocean)
+    ),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 0.1
+  ) +
+  geom_point(size = 0.2, alpha = 0.25, color = "steelblue") +
+  coord_fixed() +
+  facet_wrap(~ type) +
+  theme_void(base_size = 10)
 ```
 
 
