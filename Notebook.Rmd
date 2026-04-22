@@ -2035,7 +2035,7 @@ if (load) {
   data_folds <- readRDS("saved_files/data_folds.rds")
 } else {
 
-  N_values <- c(2,3,4,6,8,10,20,50)
+  N_values <- c(2,3,4,8)
 
   data_folds <- lapply(N_values, function(N_current) {assign_cv_folds(dataset_sales, N = N_current, seed = 123)})
   
