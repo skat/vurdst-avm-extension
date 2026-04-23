@@ -448,11 +448,11 @@ grundsalg <- grundsalg %>%
 
 #Berig delgrunde med plandata for deljordstykker. 
 
-#fold deljordstykker ud
+## fold deljordstykker ud
 grundsalg <- udtraek_element(data = grundsalg,
                              col = "delgrund.deljordstykke",
                              keep_cols = names(grundsalg))
-#fold plandata ud
+## fold plandata ud
 grundsalg <- udtraek_element(data = grundsalg,
                              col = "deljordstykke.plandata",
                              keep_cols = names(grundsalg),
@@ -507,6 +507,8 @@ grundsalg_pcl <- grundsalg %>%
                         delgrund.samlet_sommerhuszoneareal == 0,
                         delgrund.samlet_udenzoneareal == 0,
                         deljordstykke.plandata_plandata.specifikanvendelseskategori == "1110",
+                        deljordstykke.generelanvendelseskategori == 11,
+                        is.na(deljordstykke.plandata_plandata.maaikkeudstykkes),
                         lengths(delgrund.alle_bygninger_paa_delgrunden) == 0,
                         is.na(salg.bygningsforholdkode),
                         vurinfo.antal_sfer == 1,
@@ -648,9 +650,12 @@ grundsalg_pcl <- grundsalg_pcl %>% filter(salg.ialtkoebesum >= 1e+5 & salg.ialtk
                                           deljordstykke.plandata_plandata.maksbebygpct < 50,
                                           delgrund.zone %in% c(1,2)) #kun byzone og landzone
                                   
-#Dan rest- og etageareal. Grunde med vejarealer er frasorteret, saa det gaar godt at anvende vurinfo.registreretareal_fratrukket_vejareal
-grundsalg_pcl <- grundsalg_pcl %>%  mutate(etageareal = vurinfo.registreretareal_fratrukket_vejareal * deljordstykke.plandata_plandata.maksbebygpct / 100,
-                                           restareal = pmax(0, vurinfo.registreretareal_fratrukket_vejareal - etageareal))
+#Dan rest-, etageareal og udstykninger. Grunde med vejarealer er frasorteret, saa det gaar godt at anvende vurinfo.registreretareal_fratrukket_vejareal
+grundsalg_pcl <- grundsalg_pcl %>%  
+                 mutate(etageareal = vurinfo.registreretareal_fratrukket_vejareal * deljordstykke.plandata_plandata.maksbebygpct / 100,
+                        restareal = pmax(0, vurinfo.registreretareal_fratrukket_vejareal - etageareal),
+                        antal_udstykninger = pmax(1, floor(vurinfo.registreretareal_fratrukket_vejareal / deljordstykke.plandata_plandata.udstykstoerrelse))) %>% 
+                 filter(antal_udstykninger %in% c(1,2,3))
 
 
 #Fjern ejendomme med salgsflag 
@@ -728,9 +733,10 @@ variables <- c(id = "vurinfo.vurderingsejendom_id",
                lake_view = "vurinfo.udsigtslaengde_soe",
                forest_size = "vurinfo.areal_samlet_skov",
                maximum_coverage_percentage = "deljordstykke.plandata_plandata.maksbebygpct",
+               zoning_use_categories = "delgrund.unikke_plananvendelser",
                gross_floor_area = "etageareal",
                residual_floor_areal = "restareal",
-               zoning_use_categories = "delgrund.unikke_plananvendelser",
+               number_of_subdivisions = "antal_udstykninger",
                type = "type")
 
 dataset <- dataset %>%
