@@ -446,15 +446,12 @@ grundsalg <- grundsalg %>%
              ungroup()
 
 
-#Berig delgrunde med plandata for deljordstykker. Der anvendes kun delgrund med ét deljordstykke per delgrund
-
-#grundsalg <- grundsalg %>% filter(delgrund.deljordstykker_per_delgrund == 1) 
+#Berig delgrunde med plandata for deljordstykker. 
 
 #fold deljordstykker ud
 grundsalg <- udtraek_element(data = grundsalg,
                              col = "delgrund.deljordstykke",
                              keep_cols = names(grundsalg))
-  
 #fold plandata ud
 grundsalg <- udtraek_element(data = grundsalg,
                              col = "deljordstykke.plandata",
@@ -503,7 +500,7 @@ grundsalg_pcl <- grundsalg %>%
                         vurinfo.vurbenyttelseskode == "09",
                         delgrund.enheder_per_delgrund == 0,
                         delgrund.jordstykker_per_delgrund == 1,
-                        #delgrund.deljordstykker_per_delgrund == 1,
+                        delgrund.deljordstykker_per_delgrund == 1,
                         delgrund.beskyttelseslinier_andel == 0,
                         deljordstykke.areal_beskyttet == 0,
                         deljordstykke.andel_beskyttet == 0,
