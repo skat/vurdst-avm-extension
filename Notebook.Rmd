@@ -789,7 +789,7 @@ get_residuals <- function(models, dataset, fold_from_name = TRUE) {
       fold <- i
     }
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(sales_price = dataset$sales_price,
            sales_date_numeric = dataset$sales_date_numeric,
@@ -1592,7 +1592,7 @@ get_residuals_grid <- function(models, dataset, grid_df, grid_name) {
     row <- grid_df[i, ]
     fold <- row$fold
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(sales_price = dataset$sales_price,
            predicted_sales_price = predicted_sales_price,
@@ -1682,7 +1682,7 @@ get_residuals_fraction <- function(models, dataset, grid_df) {
     fold <- row$fold
     frac <- row$fraction
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(
       sales_price = dataset$sales_price,
@@ -1847,13 +1847,12 @@ if (load){
 }
 
 double_sales <- double_sales %>% 
-                mutate(residuals_gam = 
-                       log_sales_price_indexed - predict(gam_model, double_sales, type = "link"))
+                mutate(predictions_gam = predict.gam(gam_model, double_sales, type = "link"),
+                       residuals_gam =  log_sales_price_indexed -predictions_gam)
 
 other_sales <- other_sales %>% 
-               mutate(residuals_gam = 
-                      log_sales_price_indexed - predict(gam_model, other_sales, type = "link"))
-
+               mutate(predictions_gam = predict.gam(gam_model, double_sales, type = "link"),
+                      residuals_gam =  log_sales_price_indexed -predictions_gam)
 
 # 3. XGboost Models (fitted to log sales prices and GAM residuals)
 
