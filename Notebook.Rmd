@@ -1848,11 +1848,11 @@ if (load){
 
 double_sales <- double_sales %>% 
                 mutate(predictions_gam = predict.gam(gam_model, double_sales, type = "link"),
-                       residuals_gam =  log_sales_price_indexed -predictions_gam)
+                       residuals_gam =  log_sales_price_indexed - predictions_gam)
 
 other_sales <- other_sales %>% 
-               mutate(predictions_gam = predict.gam(gam_model, double_sales, type = "link"),
-                      residuals_gam =  log_sales_price_indexed -predictions_gam)
+               mutate(predictions_gam = predict.gam(gam_model, other_sales, type = "link"),
+                      residuals_gam =  log_sales_price_indexed - predictions_gam)
 
 # 3. XGboost Models (fitted to log sales prices and GAM residuals)
 
