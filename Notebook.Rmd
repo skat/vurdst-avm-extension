@@ -1777,7 +1777,7 @@ if (load){
   time_model <- gam(sales_price ~ 
                     municipality_type + 
                     s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024),
-                    data = dataset_sales,
+                    data = other_sales,
                     family = tw(link=log),
                     method = "REML")
 
@@ -1786,19 +1786,22 @@ if (load){
 }
 
 
+#index double sales
 time_model_terms <- as.data.frame(predict.gam(time_model, double_sales, type = "terms"))
-time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", 
-                                     colnames(time_model_terms)), 
-                                     drop = FALSE]))
+time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", colnames(time_model_terms)), drop = FALSE]))
 
 double_sales <- double_sales %>% mutate(log_sales_price = log(sales_price),
-                                        log_sales_price_indexed = log_sales_price + time_adjustment,
+                                        log_sales_price_indexed = log_sales_price - time_adjustment,
                                         sales_price_indexed = exp(log_sales_price_indexed))
 
+#index other sales
+time_model_terms <- as.data.frame(predict.gam(time_model, other_sales, type = "terms"))
+time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", colnames(time_model_terms)), drop = FALSE]))
 other_sales <- other_sales %>% mutate(log_sales_price = log(sales_price),
-                                      log_sales_price_indexed = log_sales_price + time_adjustment,
+                                      log_sales_price_indexed = log_sales_price - time_adjustment,
                                       sales_price_indexed = exp(log_sales_price_indexed))
 
+#calculate lagged values
 double_sales_lagged <- double_sales %>%
                        arrange(id, sales_date) %>%
                        group_by(id) %>%
@@ -1806,7 +1809,6 @@ double_sales_lagged <- double_sales %>%
                               avg_price = (sales_price_indexed + lag(sales_price_indexed)) / 2,
                               sales_date_diff = sales_date_numeric - lag(sales_date_numeric)) %>%
                        ungroup()
-
 
 # 2. GAM model
 
@@ -2010,7 +2012,7 @@ plot_market_noise <- ggplot(data = double_sales_lagged,
                           color = "Model",
                           linetype = NULL) +
                      ylim(-1, 1) +
-                     xlim(0, 10) +
+                     xlim(0, 15) +
                      theme_minimal() +
                      theme(text = element_text(size = 12),
                            legend.position = c(0.95, 0.65),
