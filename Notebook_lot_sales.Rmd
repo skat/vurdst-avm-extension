@@ -52,7 +52,7 @@ options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to ha
 coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
 
 #Create a saved files folder and checkpoints folder is these do not already exist
-for (f in c("saved_files", "checkpoints")) {
+for (f in c("saved_files_lot_sales", "checkpoints_lot_sales")) {
   if (!dir.exists(f)) {
     dir.create(f, recursive = TRUE)
     message(sprintf("Created folder: %s", f))
@@ -74,7 +74,6 @@ The analysis is based on a dataset of single family home sales, single family lo
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 dataset <- readRDS("dataset.rds")
-str(dataset)
 
 ```
 
@@ -105,10 +104,18 @@ dataset$heating_type <- relevel(factor(dataset$heating_type), ref = "District he
 dataset <- dataset %>% mutate(sales_date = as.Date(sales_date),
                               sales_date_numeric = decimal_date(sales_date))
 
-#impute NA-values
+#impute NA-values of rebuilt year to 1970
 dataset <- dataset %>%
   mutate(year_rebuilt = if_else(is.na(year_rebuilt) | year_rebuilt < 1970, 1970, year_rebuilt))
 
+#impute NA-values of maximum_coverage_percentage to 30% 
+dataset <- dataset %>% mutate(maximum_coverage_percentage = if_else(is.na(maximum_coverage_percentage), 30, maximum_coverage_percentage))
+
+#impute NA-values of subdivision size to 700
+dataset <- dataset %>% mutate(subdivision_size = if_else(is.na(subdivision_size), 700, subdivision_size))
+
+
+#impute NA in distance variables to their cap values 
 dataset <- dataset %>% mutate(across(c(lake_distance,
                                        stream_distance,
                                        coast_distance,
@@ -119,12 +126,69 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
                                        windturbine_distance),
                                      ~ replace_na(., max(., na.rm = TRUE))))
 
-#check that there are no remaining NAs in sales data
+#check that there are no remaining NAs in property sales data
 which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
+
 
 ```
 
-## 3. Overview of property types
+
+## 3. Variable conversions and imputation
+The analysis relies on a set of variable conversions performed in order to:
+
+- Handle missing values in the dataset
+- Convert categorical variables to factors
+- Convert sales dates to numeric values
+
+The two first are straightforward while the treatment of missing values requires more consideration. The analysis presented in the paper is based on the following simply imputation scheme: 
+
+- year_rebuilt: For this variable all NA's as well as values less than 1970 are replaced by 1970. 
+- distance-variables: For these variables all NA's are replaced by the maximum value of the respective variable. 
+
+The code for the above transformations is provided below. 
+
+```{r Variable conversion and imputation, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+#convert relevant categorical variables to factors with chosen references
+dataset$municipality_type <- relevel(factor(dataset$municipality_type), ref = "Provincial")
+dataset$house_type <- relevel(factor(dataset$house_type), ref = "Detached")
+dataset$roof_type <- relevel(factor(dataset$roof_type), ref = "Fiber cement")
+dataset$wall_type <- relevel(factor(dataset$wall_type), ref = "Brick")
+dataset$heating_type <- relevel(factor(dataset$heating_type), ref = "District heating")
+
+#create a numerical variable for sales_date
+dataset <- dataset %>% mutate(sales_date = as.Date(sales_date),
+                              sales_date_numeric = decimal_date(sales_date))
+
+#impute NA-values of rebuilt year to 1970
+dataset <- dataset %>%
+  mutate(year_rebuilt = if_else(is.na(year_rebuilt) | year_rebuilt < 1970, 1970, year_rebuilt))
+
+#impute NA-values of maximum_coverage_percentage to 30% 
+dataset <- dataset %>% mutate(maximum_coverage_percentage = if_else(is.na(maximum_coverage_percentage), 30, maximum_coverage_percentage))
+
+#impute NA-values of subdivision size to 700
+dataset <- dataset %>% mutate(subdivision_size = if_else(is.na(subdivision_size), 700, subdivision_size))
+
+
+#impute NA in distance variables to their cap values 
+dataset <- dataset %>% mutate(across(c(lake_distance,
+                                       stream_distance,
+                                       coast_distance,
+                                       road_distance,
+                                       highway_distance,
+                                       train_station_distance,
+                                       railway_distance,
+                                       windturbine_distance),
+                                     ~ replace_na(., max(., na.rm = TRUE))))
+
+#check that there are no remaining NAs in property sales data
+which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
+
+
+```
+
+## 4. Overview of property types
 A simple 4-fold cross-validation split is implemented in the code below. 
 
 ```{r Overview of property types, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
@@ -172,7 +236,7 @@ A simple 4-fold cross-validation split is implemented in the code below.
 
 ```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 # pick out sales and properties
-dataset_sales <- dataset %>% filter(type == "Property sale")
+dataset_property_sales <- dataset %>% filter(type == "Property sale")
 dataset_properties <- dataset %>% 
                       filter(type == "Property") %>% 
                       mutate(sales_date_numeric = 2024.0) #we want to value properties 1 January 2024
@@ -183,9 +247,9 @@ assign_cv_folds <- function(data, N, seed = 123) {
                   .rand = runif(n()))
 }
 
-dataset_sales_cv <- assign_cv_folds(dataset_sales, N = N, seed = 123)
+dataset_property_sales_cv <- assign_cv_folds(dataset_property_sales, N = N, seed = 123)
 
-table(dataset_sales_cv$validation_set, useNA = "ifany")
+table(dataset_property_sales_cv$validation_set, useNA = "ifany")
 
 ```
 
@@ -264,17 +328,17 @@ fit_model_ensemble <- function(data, N, k_spatial, k_other = 10, fraction = 1.0,
 }
 
 if (load) {
-  models <- readRDS("saved_files/models.rds")
+  models <- readRDS("saved_files_lot_sales/models.rds")
 } else {
   models <- fit_model_ensemble(
-    data = dataset_sales_cv,
+    data = dataset_property_sales_cv,
     N = N,
     k_spatial = k_spatial,
     k_other = k_other,
     fraction = 1.0,
     checkpoint_prefix = "main"
   )
-  saveRDS(models, "saved_files/models.rds")
+  saveRDS(models, "saved_files_lot_sales/models.rds")
 }
 
 ```
