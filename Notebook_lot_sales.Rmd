@@ -133,57 +133,18 @@ which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 ```
 
 
-## 3. Variable conversions and imputation
-The analysis relies on a set of variable conversions performed in order to:
+## 3. Auxiliary variables
+For the lot sales model the following auxiliary variables are calculated: 
 
-- Handle missing values in the dataset
-- Convert categorical variables to factors
-- Convert sales dates to numeric values
+- Gross floor area: Defined as the maximum allowed maximum coverage percentage x lot size
+- Remaining floor area: Defined as lot size - gross floor area and bounded at 0. 
+- Number of subdivisions: Defined as lot size / subdivision size rounded down to nearest integer and bounded at 1. 
 
-The two first are straightforward while the treatment of missing values requires more consideration. The analysis presented in the paper is based on the following simply imputation scheme: 
+```{r Auxiliary variables, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
-- year_rebuilt: For this variable all NA's as well as values less than 1970 are replaced by 1970. 
-- distance-variables: For these variables all NA's are replaced by the maximum value of the respective variable. 
-
-The code for the above transformations is provided below. 
-
-```{r Variable conversion and imputation, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
-
-#convert relevant categorical variables to factors with chosen references
-dataset$municipality_type <- relevel(factor(dataset$municipality_type), ref = "Provincial")
-dataset$house_type <- relevel(factor(dataset$house_type), ref = "Detached")
-dataset$roof_type <- relevel(factor(dataset$roof_type), ref = "Fiber cement")
-dataset$wall_type <- relevel(factor(dataset$wall_type), ref = "Brick")
-dataset$heating_type <- relevel(factor(dataset$heating_type), ref = "District heating")
-
-#create a numerical variable for sales_date
-dataset <- dataset %>% mutate(sales_date = as.Date(sales_date),
-                              sales_date_numeric = decimal_date(sales_date))
-
-#impute NA-values of rebuilt year to 1970
-dataset <- dataset %>%
-  mutate(year_rebuilt = if_else(is.na(year_rebuilt) | year_rebuilt < 1970, 1970, year_rebuilt))
-
-#impute NA-values of maximum_coverage_percentage to 30% 
-dataset <- dataset %>% mutate(maximum_coverage_percentage = if_else(is.na(maximum_coverage_percentage), 30, maximum_coverage_percentage))
-
-#impute NA-values of subdivision size to 700
-dataset <- dataset %>% mutate(subdivision_size = if_else(is.na(subdivision_size), 700, subdivision_size))
-
-
-#impute NA in distance variables to their cap values 
-dataset <- dataset %>% mutate(across(c(lake_distance,
-                                       stream_distance,
-                                       coast_distance,
-                                       road_distance,
-                                       highway_distance,
-                                       train_station_distance,
-                                       railway_distance,
-                                       windturbine_distance),
-                                     ~ replace_na(., max(., na.rm = TRUE))))
-
-#check that there are no remaining NAs in property sales data
-which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
+dataset <- dataset %>% mutate(gross_floor_area = lot_size * maximum_coverage_percentage/100,
+                              remaining_floor_area = pmax(0, lot_size - gross_floor_area),
+                              number_of_divisions = pmax(1, floor(lot_size / subdivision_size)))
 
 
 ```
