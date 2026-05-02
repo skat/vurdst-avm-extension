@@ -75,6 +75,41 @@ The analysis is based on a dataset of single family home sales, single family lo
 
 dataset <- readRDS("dataset.rds")
 
+table(dataset$type)
+
+plot <- ggplot() +
+        geom_contour(data = coordinate_grid,
+                     aes(x = coordinate_east,
+                         y = coordinate_north,
+                         z = as.numeric(!ocean)),
+                         color = "black",
+                         size = 0.1) +
+        geom_point(data = dataset,
+                   aes(x = coordinate_east,
+                       y = coordinate_north,
+                       color = type),
+                       size = 1.0) +
+        coord_fixed() +
+        theme_void(base_size = 10)
+
+
+ggplot(dataset, aes(coordinate_east, coordinate_north)) +
+  geom_contour(
+    data = coordinate_grid,
+    aes(
+      x = coordinate_east,
+      y = coordinate_north,
+      z = as.numeric(!ocean)
+    ),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 0.1
+  ) +
+  geom_point(size = 0.2, alpha = 0.25, color = "steelblue") +
+  coord_fixed() +
+  facet_wrap(~ type) +
+  theme_void(base_size = 10)
+
 ```
 
 ## 2. Variable conversions and imputation
@@ -149,58 +184,24 @@ dataset <- dataset %>% mutate(gross_floor_area = lot_size * maximum_coverage_per
 
 ```
 
-## 4. Overview of property types
-A simple 4-fold cross-validation split is implemented in the code below. 
 
-```{r Overview of property types, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
-#The three types included in the dataset. This notebook only uses Property and Property Sales
-table(dataset$type)
+## 5. Extract property types 
+Extract different types of properties in the dataset for working with them separately. 
 
 
-plot <- ggplot() +
-        geom_contour(data = coordinate_grid,
-                     aes(x = coordinate_east,
-                         y = coordinate_north,
-                         z = as.numeric(!ocean)),
-                         color = "black",
-                         size = 0.1) +
-        geom_point(data = dataset,
-                   aes(x = coordinate_east,
-                       y = coordinate_north,
-                       color = type),
-                       size = 1.0) +
-        coord_fixed() +
-        theme_void(base_size = 10)
-
-
-ggplot(dataset, aes(coordinate_east, coordinate_north)) +
-  geom_contour(
-    data = coordinate_grid,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north,
-      z = as.numeric(!ocean)
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    linewidth = 0.1
-  ) +
-  geom_point(size = 0.2, alpha = 0.25, color = "steelblue") +
-  coord_fixed() +
-  facet_wrap(~ type) +
-  theme_void(base_size = 10)
-```
-
-
-## 4. Cross-Validation
-A simple 4-fold cross-validation split is implemented in the code below. 
-
-```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
-# pick out sales and properties
+```{r Property types, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 dataset_property_sales <- dataset %>% filter(type == "Property sale")
+dataset_lot_sales <- dataset %>% filter(type == "Lot sale")
 dataset_properties <- dataset %>% 
                       filter(type == "Property") %>% 
                       mutate(sales_date_numeric = 2024.0) #we want to value properties 1 January 2024
+
+```
+
+## 5. Cross-Validation
+A simple 4-fold cross-validation split is implemented in the code below. 
+
+```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 assign_cv_folds <- function(data, N, seed = 123) {
   set.seed(seed)
@@ -208,16 +209,23 @@ assign_cv_folds <- function(data, N, seed = 123) {
                   .rand = runif(n()))
 }
 
+#property sales
 dataset_property_sales_cv <- assign_cv_folds(dataset_property_sales, N = N, seed = 123)
 
 table(dataset_property_sales_cv$validation_set, useNA = "ifany")
+
+
+#lot sales
+dataset_lot_sales_cv <- assign_cv_folds(dataset_lot_sales, N = N, seed = 123)
+
+table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 
 ```
 
 
 # GAM Models 
 
-## 1. Model training
+## 1. Property model
 The code below fits the GAM model structure described in "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market" based on the cross validation split employed. 
 
 ```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
@@ -301,6 +309,38 @@ if (load) {
   )
   saveRDS(models, "saved_files_lot_sales/models.rds")
 }
+
+```
+
+
+
+## 5. Standardization
+The lot sales and properties are augmented with a fictitious single family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
+
+```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+#augment lot sales
+dataset_lot_sales_cv$year_built <- 1970
+dataset_lot_sales_cv$year_rebuilt <- 1970
+dataset_lot_sales_cv$living_space <- 140
+dataset_lot_sales_cv$number_of_bathrooms <- 1
+dataset_lot_sales_cv$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
+dataset_lot_sales_cv$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
+dataset_lot_sales_cv$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
+dataset_lot_sales_cv$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
+dataset_lot_sales_cv$sales_price_standardized <- as.vector(predict.gam(models$Model1, dataset_lot_sales, type = "response"))
+
+#augment properties
+dataset_properties$year_built <- 1970
+dataset_properties$year_rebuilt <- 1970
+dataset_properties$living_space <- 140
+dataset_properties$number_of_bathrooms <- 1
+dataset_properties$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
+dataset_properties$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
+dataset_properties$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
+dataset_properties$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
+dataset_properties$sales_price_standardized <- as.vector(predict.gam(models$Model1, dataset_properties, type = "response"))
+
 
 ```
 

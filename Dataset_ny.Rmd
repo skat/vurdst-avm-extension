@@ -169,7 +169,7 @@ process_vurderingsejendomme_chunk <- function(file, variable) {
   rm(dat, enheder, delgrunde, vurinfo)
   gc()
 
-  out
+  vurderingsejendomme
 }
 
 process_vurderingsejendomme <- function(path, variable) {

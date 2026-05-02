@@ -74,7 +74,6 @@ The analysis is based on a dataset of single family home sales, single family lo
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 dataset <- readRDS("dataset.rds")
-str(dataset)
 #The three types included in the dataset. This notebook only uses Property and Property Sales
 table(dataset$type)
 
