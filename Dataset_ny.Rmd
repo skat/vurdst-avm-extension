@@ -568,6 +568,8 @@ ejendomssalg_pcl <- ejendomssalg %>%
                            delgrund.samlet_udenzoneareal == 0,
                            deljordstykke.generelanvendelseskategori == 11,
                            deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1110", "1120"),
+                           is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | deljordstykke.plandata_plandata.udstykstoerrelse >= 400 & deljordstykke.plandata_plandata.udstykstoerrelse <= 1000,
+                           is.na(deljordstykke.plandata_plandata.maksbebygpct) | deljordstykke.plandata_plandata.maksbebygpct >= 20 & deljordstykke.plandata_plandata.maksbebygpct <= 50,
                            is.na(deljordstykke.plandata_plandata.maaikkeudstykkes))
 
 vurderingsejendomme_pcl <- vurderingsejendomme %>%
@@ -604,6 +606,8 @@ grundsalg_pcl <- grundsalg %>%
                         delgrund.samlet_udenzoneareal == 0,
                         deljordstykke.generelanvendelseskategori == 11,
                         deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1110", "1120"),
+                        is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | deljordstykke.plandata_plandata.udstykstoerrelse >= 400 & deljordstykke.plandata_plandata.udstykstoerrelse <= 1000,
+                        is.na(deljordstykke.plandata_plandata.maksbebygpct) | deljordstykke.plandata_plandata.maksbebygpct >= 20 & deljordstykke.plandata_plandata.maksbebygpct <= 50,
                         is.na(deljordstykke.plandata_plandata.maaikkeudstykkes))
 
 
