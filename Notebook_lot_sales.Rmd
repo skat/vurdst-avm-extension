@@ -274,7 +274,7 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
   
   if (save_checkpoint) {
     filename <- sprintf("%s_fold%d_k%d_frac%.2f.rds", checkpoint_prefix, i, k_spatial, fraction)
-    saveRDS(model, file = file.path("checkpoints", filename))
+    saveRDS(model, file = file.path("checkpoints_lot_sales", filename))
   }
   
   model
@@ -320,15 +320,15 @@ The lot sales and properties are augmented with a fictitious single family house
 ```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
 #augment lot sales
-dataset_lot_sales_cv$year_built <- 1970
-dataset_lot_sales_cv$year_rebuilt <- 1970
-dataset_lot_sales_cv$living_space <- 140
-dataset_lot_sales_cv$lot_size <- 800
-dataset_lot_sales_cv$number_of_bathrooms <- 1
-dataset_lot_sales_cv$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
-dataset_lot_sales_cv$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
-dataset_lot_sales_cv$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
-dataset_lot_sales_cv$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
+dataset_lot_sales_cv_standardized$year_built <- 1970
+dataset_lot_sales_cv_standardized$year_rebuilt <- 1970
+dataset_lot_sales_cv_standardized$living_space <- 140
+dataset_lot_sales_cv_standardized$lot_size <- 800
+dataset_lot_sales_cv_standardized$number_of_bathrooms <- 1
+dataset_lot_sales_cv_standardized$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
+dataset_lot_sales_cv_standardized$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
+dataset_lot_sales_cv_standardized$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
+dataset_lot_sales_cv_standardized$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
 
 #augment properties
 dataset_properties$year_built <- 1970
@@ -345,7 +345,7 @@ dataset_properties$heating_type <- factor("District heating", levels = levels(as
 
 for (model_name in names(models)) {
   
-  dataset_lot_sales_cv[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv, type = "response"))
+  dataset_lot_sales_cv[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
   dataset_properties[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties, type = "response"))
 
 }
@@ -354,58 +354,110 @@ for (model_name in names(models)) {
 
 ```
 
-## 6. Lot models
 
+## 6. Lot models
 
 ```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
 fit_fold_model <- function(formula, data, fold) {
   
   training_subset <- data %>% filter(validation_set != fold)
-
-  bam(
-    formula,
-    data = training_subset,
-    family = tw(link = log),
-    method = "fREML"
-  )
+  
+  bam(formula,
+      data = training_subset,
+      family = tw(link = log),
+      method = "fREML")
 }
 
 fit_model_set <- function(formula, data, N) {
-  models <- future_lapply(1:N, function(i) {
-    fit_fold_model(formula = formula, data = data, fold = i)
+  
+  models <- future_lapply(seq_len(N), function(i) {
+    fit_fold_model(
+      formula = formula,
+      data = data,
+      fold = i
+    )
   })
-  names(models) <- paste0("Model", 1:N)
+  
+  names(models) <- paste0("Model", seq_len(N))
+  
   models
 }
 
-model_formulas <- list(
-  
-  models1 = sales_price ~ s(sales_price_standardized_Model1, k = 6),
-  models2 = sales_price ~ s(sales_price_standardized_Model2, k = 6),
-  models3 = sales_price ~ s(sales_price_standardized_Model3, k = 6),
-  models4 = sales_price ~ s(sales_price_standardized_Model4, k = 6),
-  models5 = sales_price ~ s(sales_price_standardized_Model1, k = 6) + s(coordinate_east, coordinate_north, k = 10),
-  models6 = sales_price ~ s(sales_price_standardized_Model2, k = 6) + s(coordinate_east, coordinate_north, k = 10),
-  models7 = sales_price ~ s(sales_price_standardized_Model3, k = 6) + s(coordinate_east, coordinate_north, k = 10),
-  models8 = sales_price ~ s(sales_price_standardized_Model4, k = 6) + s(coordinate_east, coordinate_north, k = 10),
-  models9 = sales_price ~ s(sales_price_standardized_Model1, k = 6) + s(lot_size, k = 6),
-  models10 = sales_price ~ s(sales_price_standardized_Model2, k = 6) + s(lot_size, k = 6),
-  models11 = sales_price ~ s(sales_price_standardized_Model3, k = 6) + s(lot_size, k = 6),
-  models12 = sales_price ~ s(sales_price_standardized_Model4, k = 6) + s(lot_size, k = 6),
-  models13 = sales_price ~ s(sales_price_standardized_Model1, k = 6) + s(lot_size, k = 6) + s(maximum_coverage_percentage, k = 3),
-  models14 = sales_price ~ s(sales_price_standardized_Model2, k = 6) + s(lot_size, k = 6) + s(maximum_coverage_percentage, k = 3),
-  models15 = sales_price ~ s(sales_price_standardized_Model3, k = 6) + s(lot_size, k = 6) + s(maximum_coverage_percentage, k = 3),
-  models16 = sales_price ~ s(sales_price_standardized_Model4, k = 6) + s(lot_size, k = 6) + s(maximum_coverage_percentage, k = 3),
-  models17 = sales_price ~ s(sales_price_standardized_Model1, k = 6) + s(remaining_floor_area, k = 6),
-  models18 = sales_price ~ s(sales_price_standardized_Model2, k = 6) + s(remaining_floor_area, k = 6),
-  models19 = sales_price ~ s(sales_price_standardized_Model3, k = 6) + s(remaining_floor_area, k = 6),
-  models20 = sales_price ~ s(sales_price_standardized_Model4, k = 6) + s(remaining_floor_area, k = 6),
-  models21 = sales_price ~ s(sales_price_standardized_Model1, k = 6) + s(remaining_floor_area, k = 6) + s(remaining_floor_area, k = 6),
-  models22 = sales_price ~ s(sales_price_standardized_Model2, k = 6) + s(remaining_floor_area, k = 6) + s(remaining_floor_area, k = 6),
-  models23 = sales_price ~ s(sales_price_standardized_Model3, k = 6) + s(remaining_floor_area, k = 6) + s(remaining_floor_area, k = 6),
-  models24 = sales_price ~ s(sales_price_standardized_Model4, k = 6) + s(remaining_floor_area, k = 6) + s(remaining_floor_area, k = 6))
 
+standard_vars <- paste0("sales_price_standardized_Model", 1:4)
+
+base_terms <- list(
+  none = NULL,
+  lot_size = "s(lot_size, k = 6)",
+  divisions = "s(number_of_divisions, k = 3)",
+  coverage = "s(maximum_coverage_percentage, k = 3)",
+  lot_size_divisions = c(
+    "s(lot_size, k = 6)",
+    "s(number_of_divisions, k = 3)"
+  ),
+  lot_size_coverage = c(
+    "s(lot_size, k = 6)",
+    "s(maximum_coverage_percentage, k = 3)"
+  ),
+  lot_size_divisions_coverage = c(
+    "s(lot_size, k = 6)",
+    "s(number_of_divisions, k = 3)",
+    "s(maximum_coverage_percentage, k = 3)"
+  ),
+  te_lot_coverage = "te(lot_size, maximum_coverage_percentage, k = c(6, 3))",
+  te_lot_divisions = "te(lot_size, number_of_divisions, k = c(6, 3))",
+  gross_floor_area = "s(gross_floor_area, k = 6)",
+  gross_remaining_area = c(
+    "s(gross_floor_area, k = 6)",
+    "s(remaining_floor_area, k = 6)"
+  ),
+  te_gross_remaining = "te(gross_floor_area, remaining_floor_area, k = c(6, 6))"
+)
+
+coord_terms <- list(
+  no_coords = NULL,
+  coords = "s(coordinate_east, coordinate_north, k = 10)"
+)
+
+make_formula <- function(std_var, extra_terms = NULL, coord_term = NULL) {
+  rhs <- c(
+    paste0("s(", std_var, ", k = 6)"),
+    extra_terms,
+    coord_term
+  )
+  
+  as.formula(paste("sales_price ~", paste(rhs, collapse = " + ")))
+}
+
+model_grid <- expand.grid(
+  std_var = standard_vars,
+  base_name = names(base_terms),
+  coord_name = names(coord_terms),
+  stringsAsFactors = FALSE
+)
+
+model_formulas <- pmap(
+  model_grid,
+  function(std_var, base_name, coord_name) {
+    make_formula(
+      std_var = std_var,
+      extra_terms = base_terms[[base_name]],
+      coord_term = coord_terms[[coord_name]]
+    )
+  }
+)
+
+names(model_formulas) <- paste0(
+  "model_",
+  seq_along(model_formulas),
+  "_",
+  model_grid$std_var,
+  "_",
+  model_grid$base_name,
+  "_",
+  model_grid$coord_name
+)
 models <- lapply(names(model_formulas), function(model_name) {
   message("Fitting ", model_name, " ...")
   fit_model_set(
@@ -421,54 +473,54 @@ saveRDS(models, "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.r
 
 
 ```
-#### Smooth effects 
+
+
+
+
+#### 7. Smooth effect of standard prices 
 
 ```{r Smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
-smooth_variables <- c(
-  models1 = "sales_price_standardized_Model1",
-  models2 = "sales_price_standardized_Model2",
-  models3 = "sales_price_standardized_Model3",
-  models4 = "sales_price_standardized_Model4"
-)
+extract_std_var <- function(model_name) {
+  str_extract(model_name, "sales_price_standardized_Model[1-4]")
+}
 
-smooth_dfs <- lapply(names(models), function(property_model_name) {
+smooth_dfs <- imap(models, function(model_set, model_name) {
   
-  var <- smooth_variables[[property_model_name]]
+  std_var <- extract_std_var(model_name)
   
-  lapply(names(models[[property_model_name]]), function(lot_split_name) {
+  map_dfr(names(model_set), function(lot_split_name) {
     
-    mod <- models[[property_model_name]][[lot_split_name]]
+    mod <- model_set[[lot_split_name]]
+    
+    new_data <- tibble(
+      !!std_var := seq(0, 1e7, length.out = 200)
+    )
     
     df <- tryCatch(
       smooth_estimates(
         mod,
-        smooth = paste0("s(", var, ")"),
+        smooth = paste0("s(", std_var, ")"),
+        data = new_data,
         partial_match = TRUE
       ),
       error = function(e) {
-        message(sprintf(
-          "Skipping %s / %s: %s",
-          property_model_name, lot_split_name, e$message
-        ))
+        message(sprintf("Skipping %s / %s: %s", model_name, lot_split_name, e$message))
         return(NULL)
       }
     )
     
-    if (!is.null(df)) {
-      df <- df %>%
-        mutate(
-          property_model = property_model_name,
-          lot_split = sub("^Model", "Lot split ", lot_split_name),
-          standardized_price = .data[[var]]
-        )
-    }
+    if (is.null(df)) return(NULL)
     
-    df
+    df %>%
+      mutate(
+        model_name = model_name,
+        property_model = str_extract(std_var, "Model[1-4]"),
+        lot_split = sub("^Model", "Lot split ", lot_split_name),
+        standardized_price = .data[[std_var]]
+      )
   })
-}) %>%
-  unlist(recursive = FALSE) %>%
-  Filter(Negate(is.null), .)
+})
 
 combined_df <- bind_rows(smooth_dfs)
 
@@ -479,10 +531,14 @@ plot_standardized_smooth <- ggplot(
     y = .estimate,
     color = lot_split,
     linetype = property_model,
-    group = interaction(property_model, lot_split)
+    group = interaction(model_name, lot_split)
   )
 ) +
-  geom_line(linewidth = 1) +
+  geom_line(linewidth = 0.8, alpha = 0.8) +
+  scale_x_continuous(
+    limits = c(0, 1e7),
+    labels = function(x) paste0(x / 1e6, "M")
+  ) +
   labs(
     x = "Standardiseret ejendomspris",
     y = "Partiel effekt",
@@ -491,5 +547,5 @@ plot_standardized_smooth <- ggplot(
   ) +
   theme_minimal()
 
-
+plot_standardized_smooth
 ```
