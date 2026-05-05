@@ -1,0 +1,517 @@
+---
+title: "Supplementary Notebook"
+author: "August E. G. Mikkelsen"
+date: "2025-05-08"
+output: pdf_document
+header-includes:
+  - \usepackage{xcolor}
+---
+
+```{r setup, eval=TRUE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(mgcv)
+library(gratia) 
+library(knitr)
+library(patchwork)
+library(lubridate)
+library(future)
+library(future.apply)
+library(rlang)
+library(stringr)
+library(furrr)
+library(xgboost)
+library(caret)
+library(Hmisc)
+library(kableExtra)
+library(nabor)
+library(purrr)
+library(ggrastr)
+library(ggridges)
+library(gridExtra)
+library(forcats)
+library(pheatmap)
+library(viridis)
+library(cowplot)
+library(scico)
+library(scales)
+
+# Global parameters
+set.seed(123) # for reproducibility
+N <- 4 # number of CV folds
+k_spatial = 1000 # initial number of basis functions used in the spatial smooths
+k_other = 10 # initial number of basis functions used for other smooths
+load <- FALSE # determines whether or not to preload models in the various chunks
+plan(multisession, workers = N) #do as much as possible in parallel
+options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
+
+#External files
+coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
+
+#Create a saved files folder and checkpoints folder is these do not already exist
+for (f in c("saved_files_lot_sales", "checkpoints_lot_sales")) {
+  if (!dir.exists(f)) {
+    dir.create(f, recursive = TRUE)
+    message(sprintf("Created folder: %s", f))
+  } else {
+    message(sprintf("Folder already exists: %s", f))
+  }
+}
+```
+
+# Introduction
+This notebook provides a walkthrough of the analysis and results described in the paper "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". 
+
+
+# Dataset 
+
+## 1. Description
+The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from the period 01/01/2014-01/01/2024. The dataset, included as a .rds file in this repository, is loaded and inspected below.
+
+```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
+
+dataset <- readRDS("dataset.rds")
+
+table(dataset$type)
+
+plot <- ggplot() +
+        geom_contour(data = coordinate_grid,
+                     aes(x = coordinate_east,
+                         y = coordinate_north,
+                         z = as.numeric(!ocean)),
+                         color = "black",
+                         size = 0.1) +
+        geom_point(data = dataset,
+                   aes(x = coordinate_east,
+                       y = coordinate_north,
+                       color = type),
+                       size = 1.0) +
+        coord_fixed() +
+        theme_void(base_size = 10)
+
+
+ggplot(dataset, aes(coordinate_east, coordinate_north)) +
+  geom_contour(
+    data = coordinate_grid,
+    aes(
+      x = coordinate_east,
+      y = coordinate_north,
+      z = as.numeric(!ocean)
+    ),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 0.1
+  ) +
+  geom_point(size = 0.2, alpha = 0.25, color = "steelblue") +
+  coord_fixed() +
+  facet_wrap(~ type) +
+  theme_void(base_size = 10)
+
+```
+
+## 2. Variable conversions and imputation
+The analysis relies on a set of variable conversions performed in order to:
+
+- Handle missing values in the dataset
+- Convert categorical variables to factors
+- Convert sales dates to numeric values
+
+The two first are straightforward while the treatment of missing values requires more consideration. The analysis presented in the paper is based on the following simply imputation scheme: 
+
+- year_rebuilt: For this variable all NA's as well as values less than 1970 are replaced by 1970. 
+- distance-variables: For these variables all NA's are replaced by the maximum value of the respective variable. 
+
+The code for the above transformations is provided below. 
+
+```{r Variable conversion and imputation, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+#convert relevant categorical variables to factors with chosen references
+dataset$municipality_type <- relevel(factor(dataset$municipality_type), ref = "Provincial")
+dataset$house_type <- relevel(factor(dataset$house_type), ref = "Detached")
+dataset$roof_type <- relevel(factor(dataset$roof_type), ref = "Fiber cement")
+dataset$wall_type <- relevel(factor(dataset$wall_type), ref = "Brick")
+dataset$heating_type <- relevel(factor(dataset$heating_type), ref = "District heating")
+
+#create a numerical variable for sales_date
+dataset <- dataset %>% mutate(sales_date = as.Date(sales_date),
+                              sales_date_numeric = decimal_date(sales_date))
+
+#impute NA-values of rebuilt year to 1970
+dataset <- dataset %>%
+  mutate(year_rebuilt = if_else(is.na(year_rebuilt) | year_rebuilt < 1970, 1970, year_rebuilt))
+
+#impute NA-values of maximum_coverage_percentage to 30% 
+dataset <- dataset %>% mutate(maximum_coverage_percentage = if_else(is.na(maximum_coverage_percentage), 30, maximum_coverage_percentage))
+
+#impute NA-values of subdivision size to 700
+dataset <- dataset %>% mutate(subdivision_size = if_else(is.na(subdivision_size), 700, subdivision_size))
+
+
+#impute NA in distance variables to their cap values 
+dataset <- dataset %>% mutate(across(c(lake_distance,
+                                       stream_distance,
+                                       coast_distance,
+                                       road_distance,
+                                       highway_distance,
+                                       train_station_distance,
+                                       railway_distance,
+                                       windturbine_distance),
+                                     ~ replace_na(., max(., na.rm = TRUE))))
+
+#check that there are no remaining NAs in property sales data
+which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
+
+
+```
+
+
+## 3. Auxiliary variables
+For the lot sales model the following auxiliary variables are calculated: 
+
+- Gross floor area: Defined as the maximum allowed maximum coverage percentage x lot size
+- Remaining floor area: Defined as lot size - gross floor area and bounded at 0. 
+- Number of subdivisions: Defined as lot size / subdivision size rounded down to nearest integer and bounded at 1. 
+
+```{r Auxiliary variables, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+dataset <- dataset %>% mutate(gross_floor_area = lot_size * maximum_coverage_percentage/100,
+                              remaining_floor_area = pmax(0, lot_size - gross_floor_area),
+                              number_of_divisions = pmax(1, floor(lot_size / subdivision_size)))
+
+
+```
+
+
+## 5. Extract property types 
+Extract different types of properties in the dataset for working with them separately. 
+
+
+```{r Property types, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+dataset_property_sales <- dataset %>% filter(type == "Property sale")
+dataset_lot_sales <- dataset %>% filter(type == "Lot sale")
+dataset_properties <- dataset %>% 
+                      filter(type == "Property") %>% 
+                      mutate(sales_date_numeric = 2024.0) #we want to value properties 1 January 2024
+
+```
+
+## 5. Cross-Validation
+A simple 4-fold cross-validation split is implemented in the code below. 
+
+```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+
+assign_cv_folds <- function(data, N, seed = 123) {
+  set.seed(seed)
+  data %>% mutate(validation_set = sample(rep(1:N, length.out = n())),
+                  .rand = runif(n()))
+}
+
+#property sales
+dataset_property_sales_cv <- assign_cv_folds(dataset_property_sales, N = N, seed = 123)
+
+table(dataset_property_sales_cv$validation_set, useNA = "ifany")
+
+
+#lot sales
+dataset_lot_sales_cv <- assign_cv_folds(dataset_lot_sales, N = N, seed = 123)
+
+table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
+
+```
+
+
+# GAM Models 
+
+## 1. Property model
+The code below fits the GAM model structure described in "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market" based on the cross validation split employed. 
+
+```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
+                     checkpoint_prefix = "Model", save_checkpoint = TRUE,
+                     seed = 123) {
+  
+  training_subset <- data %>% filter(validation_set != i)
+
+  if (fraction < 1.0) {
+    
+    training_subset <- training_subset %>%
+                       group_by(municipality_type) %>%
+                       arrange(.rand, .by_group = TRUE) %>%
+                       slice_head(prop = fraction) %>%
+                       ungroup() 
+  }
+  
+  model <- bam(sales_price ~ 
+               s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
+               s(year_built, k = k_other, by = municipality_type, pc = 1970) +
+               s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
+               s(living_space, k = k_other, by = municipality_type, pc = 140) +
+               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
+               s(coast_distance, k = k_other, pc = 1500) +
+               s(lake_distance, k = k_other, pc = 500) +
+               s(stream_distance, k = k_other, pc = 1000) +
+               s(road_distance, k = k_other, pc = 2000) +
+               s(highway_distance, k = k_other, pc = 2000) +
+               s(train_station_distance, k = k_other, pc = 2000) +
+               s(railway_distance, k = k_other, pc = 1000) +
+               s(windturbine_distance, k = k_other, pc = 3000) +
+               s(ocean_view, k = k_other, pc = 0) +
+               s(lake_view, k = k_other, pc = 0) +
+               s(forest_size, k = k_other, pc = 0) +
+               s(number_of_bathrooms, by = municipality_type, k = 2, pc = 1) +
+               house_type * municipality_type +
+               roof_type * municipality_type +
+               wall_type * municipality_type +
+               heating_type * municipality_type,
+               data = training_subset,
+               chunk.size = nrow(training_subset),
+               family = tw(link = log),
+               method = "fREML")
+  
+  if (save_checkpoint) {
+    filename <- sprintf("%s_fold%d_k%d_frac%.2f.rds", checkpoint_prefix, i, k_spatial, fraction)
+    saveRDS(model, file = file.path("checkpoints_lot_sales", filename))
+  }
+  
+  model
+}
+
+fit_model_ensemble <- function(data, N, k_spatial, k_other = 10, fraction = 1.0, checkpoint_prefix = "Model") {
+  
+  models <- future_lapply(1:N, function(i) {
+    fit_fold(
+      i = i,
+      data = data,
+      k_spatial = k_spatial,
+      k_other = k_other,
+      fraction = fraction,
+      checkpoint_prefix = checkpoint_prefix
+    )
+  })
+  names(models) <- paste0("Model", 1:N)
+  models
+}
+
+if (load) {
+  models <- readRDS("saved_files_lot_sales/models.rds")
+} else {
+  models <- fit_model_ensemble(
+    data = dataset_property_sales_cv,
+    N = N,
+    k_spatial = k_spatial,
+    k_other = k_other,
+    fraction = 1.0,
+    checkpoint_prefix = "main"
+  )
+  saveRDS(models, "saved_files_lot_sales/models.rds")
+}
+
+```
+
+
+
+## 5. Standardization
+The lot sales and properties are augmented with a fictitious single family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
+
+```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+#augment lot sales
+dataset_lot_sales_cv_standardized$year_built <- 1970
+dataset_lot_sales_cv_standardized$year_rebuilt <- 1970
+dataset_lot_sales_cv_standardized$living_space <- 140
+dataset_lot_sales_cv_standardized$lot_size <- 800
+dataset_lot_sales_cv_standardized$number_of_bathrooms <- 1
+dataset_lot_sales_cv_standardized$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
+dataset_lot_sales_cv_standardized$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
+dataset_lot_sales_cv_standardized$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
+dataset_lot_sales_cv_standardized$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
+
+#augment properties
+dataset_properties$year_built <- 1970
+dataset_properties$year_rebuilt <- 1970
+dataset_properties$living_space <- 140
+dataset_properties$lot_size <- 800
+dataset_properties$number_of_bathrooms <- 1
+dataset_properties$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
+dataset_properties$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
+dataset_properties$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
+dataset_properties$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
+
+#calculate standarized prices for each model 
+
+for (model_name in names(models)) {
+  
+  dataset_lot_sales_cv[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
+  dataset_properties[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties, type = "response"))
+
+}
+
+
+
+```
+
+
+## 6. Lot models
+
+```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
+fit_fold_model <- function(formula, data, fold) {
+  
+  training_subset <- data %>% filter(validation_set != fold)
+  
+  bam(formula,
+      data = training_subset,
+      family = tw(link = log),
+      method = "fREML")
+}
+
+fit_model_set <- function(formula, data, N) {
+  
+  models <- future_lapply(seq_len(N), function(i) {
+    fit_fold_model(
+      formula = formula,
+      data = data,
+      fold = i
+    )
+  })
+  
+  names(models) <- paste0("Model", seq_len(N))
+  
+  models
+}
+
+
+standard_vars <- paste0("sales_price_standardized_Model", 1:N)
+
+base_terms <- list(none = NULL,
+                   lot_size = "s(lot_size, k = 6, pc = 800)",
+                   divisions = "s(number_of_divisions, k = 3, pc = 1)",
+                   coverage = "s(maximum_coverage_percentage, k = 3, pc = 30)",
+                   lot_size_divisions = c("s(lot_size, k = 6, pc = 800)", "s(number_of_divisions, k = 3, pc = 1)"),
+                   lot_size_coverage = c("s(lot_size, k = 6, pc = 800)", "s(maximum_coverage_percentage, k = 3, pc = 30)"),
+                   lot_size_divisions_coverage = c("s(lot_size, k = 6, pc = 800)","s(number_of_divisions, k = 3, pc = 1)", "s(maximum_coverage_percentage, k = 3, pc = 30)"),
+                   te_lot_coverage = "te(lot_size, maximum_coverage_percentage, k = c(6, 3))",
+                   te_lot_divisions = "te(lot_size, number_of_divisions, k = c(6, 3))",
+                   te_lot_coverage = "te(lot_size, maximum_coverage_percentage, number_of_divisions, k = c(6, 3, 3))",
+                   gross_floor_area = "s(gross_floor_area, k = 6, pc = 240)",
+                   gross_remaining_area = c("s(gross_floor_area, k = 6, pc = 240)", "s(remaining_floor_area, k = 6, pc = 560)"),
+                   te_gross_remaining = "te(gross_floor_area, remaining_floor_area, k = c(6, 6))")
+
+coord_terms <- list(no_coords = NULL, coords = "s(coordinate_east, coordinate_north, k = 10)")
+
+make_formula <- function(std_var, extra_terms = NULL, coord_term = NULL) {
+  
+  rhs <- c(paste0("s(", std_var, ", k = 6)"), extra_terms, coord_term)
+  
+  as.formula(paste("sales_price ~", paste(rhs, collapse = " + ")))
+  
+}
+
+model_grid <- expand.grid(std_var = standard_vars,
+                          base_name = names(base_terms),
+                          coord_name = names(coord_terms),
+                          stringsAsFactors = FALSE)
+
+model_formulas <- pmap(
+  model_grid,
+  function(std_var, base_name, coord_name) {
+    make_formula(
+      std_var = std_var,
+      extra_terms = base_terms[[base_name]],
+      coord_term = coord_terms[[coord_name]]
+    )
+  }
+)
+
+names(model_formulas) <- paste0(
+  "model_",
+  seq_along(model_formulas),
+  "_",
+  model_grid$std_var,
+  "_",
+  model_grid$base_name,
+  "_",
+  model_grid$coord_name
+)
+models <- lapply(names(model_formulas), function(model_name) {
+  message("Fitting ", model_name, " ...")
+  fit_model_set(
+    formula = model_formulas[[model_name]],
+    data = dataset_lot_sales_cv,
+    N = N
+  )
+})
+
+names(models) <- names(model_formulas)
+
+saveRDS(models, "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.rds")
+
+
+```
+
+
+
+
+#### 7. Smooth effect of standard prices 
+
+```{r Smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+extract_std_var <- function(model_name) {str_extract(model_name, "sales_price_standardized_Model[1-4]")}
+
+smooth_dfs <- imap(models, function(model_set, model_name) {
+  
+  std_var <- extract_std_var(model_name)
+  
+  map_dfr(names(model_set), function(lot_split_name) {
+    
+    mod <- model_set[[lot_split_name]]
+    
+    new_data <- tibble(!!std_var := seq(0, 1e7, length.out = 200))
+    
+    df <- tryCatch(
+      smooth_estimates(
+        mod,
+        smooth = paste0("s(", std_var, ")"),
+        data = new_data,
+        partial_match = TRUE
+      ),
+      error = function(e) {
+        message(sprintf("Skipping %s / %s: %s", model_name, lot_split_name, e$message))
+        return(NULL)
+      }
+    )
+    
+    if (is.null(df)) return(NULL)
+    
+    df %>%
+      mutate(
+        model_name = model_name,
+        property_model = str_extract(std_var, "Model[1-4]"),
+        lot_split = sub("^Model", "Lot split ", lot_split_name),
+        standardized_price = .data[[std_var]]
+      )
+  })
+})
+
+combined_df <- bind_rows(smooth_dfs)
+
+plot_standardized_smooth <- ggplot(combined_df,
+                                   aes(x = standardized_price,
+                                       y = .estimate,
+                                       color = lot_split,
+                                       linetype = property_model,
+                                       group = interaction(model_name, lot_split))) +
+                            geom_line(linewidth = 0.8, alpha = 0.8) +
+                            scale_x_continuous(limits = c(0, 1e7), labels = function(x) paste0(x / 1e6, "M")) +
+                            labs(x = "Standard property value [kr.]",
+                                 y = "Partial effect",
+                                 color = "Lot split",
+                                 linetype = "Property split") +
+                            theme_minimal()
+
+plot_standardized_smooth
+```
