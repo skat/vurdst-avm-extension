@@ -1,10 +1,15 @@
 .Rhistory
 .Rproj.user/
 saved_files/
+saved_files_lot_sales/
 checkpoints/
 Notebook_files/
 Notebook.pdf
 Notebook.log
+Notebook.tex
+Notebook_lot_sales_files/
+Notebook_lot_sales.pdf
+Notebook_lot_sales.log
 Notebook.tex
 Dataset.pdf
 Paper_figures/

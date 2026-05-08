@@ -518,25 +518,40 @@ grundsalg <- grundsalg %>%
 #Berig delgrunde med plandata for deljordstykker. 
 
 ## fold deljordstykker ud
-grundsalg <- udtraek_element(data = grundsalg,
-                             col = "delgrund.deljordstykke",
-                             keep_cols = names(grundsalg))
-
 ejendomssalg <- udtraek_element(data = ejendomssalg,
                                 col = "delgrund.deljordstykke",
                                 keep_cols = names(ejendomssalg))
 
+vurderingsejendomme <- udtraek_element(data = vurderingsejendomme,
+                                       col = "delgrund.deljordstykke",
+                                       keep_cols = names(vurderingsejendomme))
+
+
+grundsalg <- udtraek_element(data = grundsalg,
+                             col = "delgrund.deljordstykke",
+                             keep_cols = names(grundsalg))
+
+
 
 ## fold plandata ud
+ejendomssalg <- udtraek_element(data = ejendomssalg,
+                                col = "deljordstykke.plandata",
+                                keep_cols = names(ejendomssalg),
+                                names_sep = "_")
+
+
+vurderingsejendomme <- udtraek_element(data = vurderingsejendomme,
+                                       col = "deljordstykke.plandata",
+                                       keep_cols = names(vurderingsejendomme),
+                                       names_sep = "_")
+
+
 grundsalg <- udtraek_element(data = grundsalg,
                              col = "deljordstykke.plandata",
                              keep_cols = names(grundsalg),
                              names_sep = "_")
 
-ejendomssalg <- udtraek_element(data = ejendomssalg,
-                                col = "deljordstykke.plandata",
-                                keep_cols = names(ejendomssalg),
-                                names_sep = "_")
+
   
          
 #Standard PCL-ejendomme
@@ -586,7 +601,20 @@ vurderingsejendomme_pcl <- vurderingsejendomme %>%
                                   enhed.boligtype == "1",
                                   enhed.toiletforhold == "T",
                                   enhed.badeforhold == "V",
-                                  enhed.koekkenforhold == "E")
+                                  enhed.koekkenforhold == "E",
+                                  delgrund.enheder_per_delgrund == 1,
+                                  delgrund.jordstykker_per_delgrund == 1,
+                                  delgrund.deljordstykker_per_delgrund == 1,
+                                  delgrund.beskyttelseslinier_andel == 0,
+                                  deljordstykke.areal_beskyttet == 0,
+                                  deljordstykke.andel_beskyttet == 0,
+                                  delgrund.samlet_sommerhuszoneareal == 0,
+                                  delgrund.samlet_udenzoneareal == 0,
+                                  deljordstykke.generelanvendelseskategori == 11,
+                                  deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1110", "1120"),
+                                  is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | deljordstykke.plandata_plandata.udstykstoerrelse >= 400 & deljordstykke.plandata_plandata.udstykstoerrelse <= 1000,
+                                  is.na(deljordstykke.plandata_plandata.maksbebygpct) | deljordstykke.plandata_plandata.maksbebygpct >= 20 & deljordstykke.plandata_plandata.maksbebygpct <= 50,
+                                  is.na(deljordstykke.plandata_plandata.maaikkeudstykkes))
 
 grundsalg_pcl <- grundsalg %>%
                  filter(salg.ejendomkategori == "EjendomKategoriUbebyggetgrund",
@@ -684,7 +712,11 @@ vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
                                   enhed.areal_til_beboelse > 0,
                                   vurinfo.registreretareal_fratrukket_vejareal > 0,
                                   delgrund.registeret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                                  delgrund.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal)
+                                  delgrund.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal,
+                                  deljordstykke.registreret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
+                                  deljordstykke.registreret_areal == vurinfo.registreretareal_fratrukket_vejareal,
+                                  deljordstykke.arealberegnetudenvej == vurinfo.registreretareal_fratrukket_vejareal,
+                                  deljordstykke.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal)
 
 grundsalg_pcl <- grundsalg_pcl %>% 
                  filter(vurinfo.registreretareal_fratrukket_vejareal > 0,
@@ -761,6 +793,12 @@ ejendomssalg_pcl <- ejendomssalg_pcl %>%
                     arrange(desc(deljordstykke.plandata_plandata.specifikanvendelseskategori == "1110"), .by_group = TRUE) %>%
                     slice(1) %>%
                     ungroup()
+
+vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
+                           group_by(vurderingsejendom_id_ice) %>%
+                           arrange(desc(deljordstykke.plandata_plandata.specifikanvendelseskategori == "1110"), .by_group = TRUE) %>%
+                           slice(1) %>%
+                           ungroup()
 
 grundsalg_pcl <- grundsalg_pcl %>%
                  group_by(vurderingsejendom_id_ice, salg.koebsdato) %>%
