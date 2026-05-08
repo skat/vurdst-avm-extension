@@ -42,9 +42,9 @@ library(scales)
 # Global parameters
 set.seed(123) # for reproducibility
 N <- 4 # number of CV folds
-k_spatial = 1000 # initial number of basis functions used in the spatial smooths
+k_spatial = 4000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- FALSE # determines whether or not to preload models in the various chunks
+load <- TRUE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -361,14 +361,21 @@ for (model_name in names(models)) {
 
 ```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
+# -------------------------
+# 1. Model fitting functions
+# -------------------------
+
 fit_fold_model <- function(formula, data, fold) {
   
-  training_subset <- data %>% filter(validation_set != fold)
+  training_subset <- data %>% 
+    filter(validation_set != fold)
   
-  bam(formula,
-      data = training_subset,
-      family = tw(link = log),
-      method = "fREML")
+  bam(
+    formula,
+    data = training_subset,
+    family = tw(link = log),
+    method = "fREML"
+  )
 }
 
 fit_model_set <- function(formula, data, N) {
@@ -386,42 +393,93 @@ fit_model_set <- function(formula, data, N) {
   models
 }
 
+# -------------------------
+# 2. Formula helpers
+# -------------------------
 
-standard_vars <- paste0("sales_price_standardized_Model", 1:N)
-
-base_terms <- list(none = NULL,
-                   lot_size = "s(lot_size, k = 6, pc = 800)",
-                   divisions = "s(number_of_divisions, k = 3, pc = 1)",
-                   coverage = "s(maximum_coverage_percentage, k = 3, pc = 30)",
-                   lot_size_divisions = c("s(lot_size, k = 6, pc = 800)", "s(number_of_divisions, k = 3, pc = 1)"),
-                   lot_size_coverage = c("s(lot_size, k = 6, pc = 800)", "s(maximum_coverage_percentage, k = 3, pc = 30)"),
-                   lot_size_divisions_coverage = c("s(lot_size, k = 6, pc = 800)","s(number_of_divisions, k = 3, pc = 1)", "s(maximum_coverage_percentage, k = 3, pc = 30)"),
-                   te_lot_coverage = "te(lot_size, maximum_coverage_percentage, k = c(6, 3))",
-                   te_lot_divisions = "te(lot_size, number_of_divisions, k = c(6, 3))",
-                   te_lot_coverage = "te(lot_size, maximum_coverage_percentage, number_of_divisions, k = c(6, 3, 3))",
-                   gross_floor_area = "s(gross_floor_area, k = 6, pc = 240)",
-                   gross_remaining_area = c("s(gross_floor_area, k = 6, pc = 240)", "s(remaining_floor_area, k = 6, pc = 560)"),
-                   te_gross_remaining = "te(gross_floor_area, remaining_floor_area, k = c(6, 6))")
-
-coord_terms <- list(no_coords = NULL, coords = "s(coordinate_east, coordinate_north, k = 300)")
-
-make_formula <- function(std_var, extra_terms = NULL, coord_term = NULL) {
-  
-  rhs <- c(paste0("s(", std_var, ", k = 10)"), extra_terms, coord_term)
-  
-  as.formula(paste("sales_price ~", paste(rhs, collapse = " + ")))
-  
+make_formula_from_terms <- function(terms) {
+  as.formula(paste("sales_price ~", paste(terms, collapse = " + ")))
 }
 
-model_grid <- expand.grid(std_var = standard_vars,
-                          base_name = names(base_terms),
-                          coord_name = names(coord_terms),
-                          stringsAsFactors = FALSE)
+make_standardized_formula <- function(std_var, extra_terms = NULL, coord_term = NULL) {
+  
+  rhs <- c(
+    paste0("s(", std_var, ", k = 10)"),
+    extra_terms,
+    coord_term
+  )
+  
+  make_formula_from_terms(rhs)
+}
+
+# -------------------------
+# 3. Standardized-price model grid
+# -------------------------
+
+standard_vars <- paste0("sales_price_standardized_Model", seq_len(N))
+
+base_terms <- list(
+  none = NULL,
+  
+  lot_size = "s(lot_size, k = 6, pc = 800)",
+  
+  divisions = "s(number_of_divisions, k = 3, pc = 1)",
+  
+  coverage = "s(maximum_coverage_percentage, k = 3, pc = 30)",
+  
+  lot_size_divisions = c(
+    "s(lot_size, k = 6, pc = 800)",
+    "s(number_of_divisions, k = 3, pc = 1)"
+  ),
+  
+  lot_size_coverage = c(
+    "s(lot_size, k = 6, pc = 800)",
+    "s(maximum_coverage_percentage, k = 3, pc = 30)"
+  ),
+  
+  lot_size_divisions_coverage = c(
+    "s(lot_size, k = 6, pc = 800)",
+    "s(number_of_divisions, k = 3, pc = 1)",
+    "s(maximum_coverage_percentage, k = 3, pc = 30)"
+  ),
+  
+  te_lot_coverage = 
+    "te(lot_size, maximum_coverage_percentage, k = c(6, 3))",
+  
+  te_lot_divisions = 
+    "te(lot_size, number_of_divisions, k = c(6, 3))",
+  
+  te_lot_coverage_divisions = 
+    "te(lot_size, maximum_coverage_percentage, number_of_divisions, k = c(6, 3, 3))",
+  
+  gross_floor_area = 
+    "s(gross_floor_area, k = 6, pc = 240)",
+  
+  gross_remaining_area = c(
+    "s(gross_floor_area, k = 6, pc = 240)",
+    "s(remaining_floor_area, k = 6, pc = 560)"
+  ),
+  
+  te_gross_remaining = 
+    "te(gross_floor_area, remaining_floor_area, k = c(6, 6))"
+)
+
+coord_terms <- list(
+  no_coords = NULL,
+  coords = "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))"
+)
+
+model_grid <- expand.grid(
+  std_var = standard_vars,
+  base_name = names(base_terms),
+  coord_name = names(coord_terms),
+  stringsAsFactors = FALSE
+)
 
 model_formulas <- pmap(
   model_grid,
   function(std_var, base_name, coord_name) {
-    make_formula(
+    make_standardized_formula(
       std_var = std_var,
       extra_terms = base_terms[[base_name]],
       coord_term = coord_terms[[coord_name]]
@@ -439,8 +497,91 @@ names(model_formulas) <- paste0(
   "_",
   model_grid$coord_name
 )
+
+# -------------------------
+# 4. Direct lot model terms
+# -------------------------
+
+direct_lot_terms <- c(
+  "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))",
+  "s(sales_date_numeric, k = 5, by = municipality_type, pc = 2024)",
+  "s(lot_size, k = 5, by = municipality_type, pc = 800)",
+  "s(coast_distance, k = 5, pc = 1500)",
+  "s(lake_distance, k = 5, pc = 500)",
+  "s(stream_distance, k = 5, pc = 1000)",
+  "s(road_distance, k = 5, pc = 2000)",
+  "s(highway_distance, k = 5, pc = 2000)",
+  "s(train_station_distance, k = 5, pc = 2000)",
+  "s(railway_distance, k = 5, pc = 1000)",
+  "s(windturbine_distance, k = 5, pc = 3000)",
+  "s(ocean_view, k = 5, pc = 0)",
+  "s(lake_view, k = 5, pc = 0)",
+  "s(forest_size, k = 5, pc = 0)"
+)
+
+# -------------------------
+# 5. Extra model families
+# -------------------------
+
+extra_formulas <- list()
+
+# 5.1 Direct lot model, no standardized price
+extra_formulas[["direct_lot_model"]] <- 
+  make_formula_from_terms(direct_lot_terms)
+
+# 5.2 Direct lot model + standardized price
+for (std_var in standard_vars) {
+  
+  extra_formulas[[paste0("direct_lot_model_plus_", std_var)]] <-
+    make_formula_from_terms(c(
+      paste0("s(", std_var, ", k = 10)"),
+      direct_lot_terms
+    ))
+}
+
+# 5.3 Standardized price by municipality type
+for (std_var in standard_vars) {
+  
+  extra_formulas[[paste0("std_by_municipality_", std_var)]] <-
+    make_formula_from_terms(c(
+      "municipality_type",
+      paste0("s(", std_var, ", k = 10, by = municipality_type)")
+    ))
+}
+
+# 5.4 Standardized price by municipality type + lot size
+for (std_var in standard_vars) {
+  
+  extra_formulas[[paste0("std_by_municipality_plus_lot_size_", std_var)]] <-
+    make_formula_from_terms(c(
+      "municipality_type",
+      paste0("s(", std_var, ", k = 10, by = municipality_type)"),
+      "s(lot_size, k = 6, pc = 800)"
+    ))
+}
+
+# 5.5 Standardized price by municipality type + coordinates
+for (std_var in standard_vars) {
+  
+  extra_formulas[[paste0("std_by_municipality_plus_coords_", std_var)]] <-
+    make_formula_from_terms(c(
+      "municipality_type",
+      paste0("s(", std_var, ", k = 10, by = municipality_type)"),
+      "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))"
+    ))
+}
+
+# Combine all formulas
+model_formulas <- c(model_formulas, extra_formulas)
+
+# -------------------------
+# 6. Fit all models
+# -------------------------
+
 models <- lapply(names(model_formulas), function(model_name) {
+  
   message("Fitting ", model_name, " ...")
+  
   fit_model_set(
     formula = model_formulas[[model_name]],
     data = dataset_lot_sales_cv,
@@ -450,9 +591,21 @@ models <- lapply(names(model_formulas), function(model_name) {
 
 names(models) <- names(model_formulas)
 
-saveRDS(models, "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.rds")
+# -------------------------
+# 7. Save output
+# -------------------------
 
-
+saveRDS(
+  list(
+    models = models,
+    model_formulas = model_formulas,
+    model_grid = model_grid,
+    base_terms = base_terms,
+    coord_terms = coord_terms,
+    direct_lot_terms = direct_lot_terms
+  ),
+  "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.rds"
+)
 ```
 
 
