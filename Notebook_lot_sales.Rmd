@@ -44,7 +44,7 @@ set.seed(123) # for reproducibility
 N <- 4 # number of CV folds
 k_spatial = 2000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- FALSE # determines whether or not to preload models in the various chunks
+load <- TRUE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -252,8 +252,8 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
                s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
                s(living_space, k = k_other, by = municipality_type, pc = 140) +
                s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-               s(number_of_divisions, k = 3, pc = 1) +
-               s(maximum_coverage_percentage, k = 3, pc = 30) +
+               s(maximum_coverage_percentage, k = 3, by = municipality_type, pc = 30) +
+               s(number_of_divisions, k = 3, by = municipality_type, pc = 1) +
                s(coast_distance, k = k_other, pc = 1500) +
                s(lake_distance, k = k_other, pc = 500) +
                s(stream_distance, k = k_other, pc = 1000) +
@@ -315,6 +315,236 @@ if (load) {
 
 ```
 
+#### Smooth effects 
+
+```{r Other smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+smooth_variables <- c(
+  sales_date_numeric = "Sales date",
+  year_built = "Year built",
+  year_rebuilt = "Year rebuilt",
+  living_space = "Living space [m²]",
+  lot_size = "Lot size [m²]",
+  maximum_coverage_percentage = "Maximum coverage [%]",
+  number_of_divisions = "Number of divisions",
+  coast_distance = "Distance to coast [m]",
+  lake_distance = "Distance to lake [m]",
+  stream_distance = "Distance to stream [m]",
+  road_distance = "Distance to road [m]",
+  highway_distance = "Distance to highway [m]",
+  train_station_distance = "Distance to train station [m]",
+  railway_distance = "Distance to railway [m]",
+  windturbine_distance = "Distance to wind turbine [m]",
+  ocean_view = "Ocean view [m]",
+  lake_view = "Lake view [m]",
+  forest_size = "Forest size [ha]",
+  number_of_bathrooms = "Number of bathrooms")
+
+plot_smooths <- list()
+
+for (var in names(smooth_variables)) {
+
+  smooth_dfs <- lapply(names(models), function(model_name) {
+    mod <- models[[model_name]]
+    df <- tryCatch(
+      smooth_estimates(mod, smooth = paste0("s(", var, ")"), partial_match = TRUE),
+      error = function(e) {
+        message(sprintf("Skipping '%s' in %s: %s", var, model_name, e$message))
+        return(NULL)
+      })
+    if (!is.null(df)) {
+      df$Model <- sub("^Model", "Model ", model_name)
+    }
+    df
+  })
+
+  smooth_dfs <- Filter(Negate(is.null), smooth_dfs)  # remove NULLs
+  if (length(smooth_dfs) == 0) next
+
+  combined_df <- bind_rows(smooth_dfs)
+
+  has_by <- any(!is.na(combined_df$.by))
+  plot_title <- paste("Partial effect of", gsub("_", " ", var))
+
+  if (has_by) {
+
+    by_var_name <- unique(na.omit(combined_df$.by))[[1]]
+
+    p <- ggplot(combined_df, aes(x = .data[[var]], y = .estimate,
+                                 color = .data[[by_var_name]],
+                                 linetype = Model, 
+                                 group = interaction(Model, .data[[by_var_name]]))) +
+        geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                    aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
+                    alpha = 0.5, 
+                    color = NA) +
+        geom_line(linewidth = 1) +
+        labs(title = plot_title,
+             x = smooth_variables[[var]],
+             y = "Partial effect") +
+        scale_color_brewer(palette = "Dark2", name = "Municipality type") +
+        scale_linetype_manual(values = c("solid", 
+                                         "dashed", 
+                                         "dotted", 
+                                         "dotdash", 
+                                         "twodash", 
+                                         "longdash")) +
+        guides(fill = guide_legend(override.aes = list(linetype = 0)))
+
+  } else {
+
+    p <- ggplot(combined_df, aes(x = .data[[var]], y = .estimate, linetype = Model)) +
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                     aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
+                     alpha = 0.5, 
+                     color = NA) +
+         geom_line(linewidth = 1, color = "black") +
+         labs(title = plot_title,
+              x = smooth_variables[[var]],
+              y = "Partial effect") +
+         scale_linetype_manual(values = c("solid", 
+                                          "dashed", 
+                                          "dotted", 
+                                          "dotdash", 
+                                          "twodash", 
+                                          "longdash"))
+  }
+  
+  p <- p + theme(legend.position = "none")
+
+  plot_smooths[[var]] <- p
+}
+
+
+saveRDS(plot_smooths, "saved_files/plot_smooths.rds")
+
+#manual axis specifications of some ill-behaved smooths to make plots easier to understand
+plot_smooths$stream_distance <- plot_smooths$stream_distance + ylim(-0.03,0.1)
+plot_smooths$lake_view <- plot_smooths$lake_view + xlim(0.0,10000) + ylim(0, 0.6)
+plot_smooths$forest_size <- plot_smooths$forest_size + xlim(0.0,40) + ylim(-0.02, 0.1)
+
+wrap_plots(plot_smooths, ncol = 2) + 
+           plot_layout(guides = "collect") &
+           theme(legend.position = "bottom",
+                 legend.text = element_text(size = 12),
+                 legend.title = element_text(size = 13, face = "bold"),
+                 legend.box = "horizontal",
+                 legend.justification = "center")
+```
+
+
+## Model performance
+
+```{r Model performance, eval=TRUE, echo=TRUE, warning=FALSE}
+
+get_residuals <- function(models, dataset, fold_from_name = TRUE) {
+  
+  residual_list <- future_lapply(seq_along(models), function(i) {
+    
+    model_name <- names(models)[i]
+    model <- models[[i]]
+    
+    if (fold_from_name) {
+      fold <- as.integer(sub("^Model(\\d+).*$", "\\1", model_name))
+    } else {
+      fold <- i
+    }
+    
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
+    
+    tibble(sales_price = dataset$sales_price,
+           sales_date_numeric = dataset$sales_date_numeric,
+           predicted_sales_price = predicted_sales_price,
+           residual_sales_price = predicted_sales_price - dataset$sales_price,
+           residual_sales_price_percent = (predicted_sales_price - dataset$sales_price) / dataset$sales_price * 100,
+           residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
+           ratio = predicted_sales_price / dataset$sales_price,
+           validation = dataset$validation_set == fold,
+           id = dataset$id,
+           municipality_type = dataset$municipality_type,
+           Model = model_name)
+    
+  })
+  
+  bind_rows(residual_list)
+}
+
+residual_df <- get_residuals(models, dataset_property_sales_cv)
+saveRDS(residual_df, "saved_files_lot_sales/residual_df.rds")
+
+performance_countrywide <- residual_df %>%
+                           mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
+                           group_by(dataset_type) %>%
+                           summarise(municipality_type = "Countrywide",
+                                     MALE = mean(abs(residual_sales_price_log)),
+                                     MAPE = mean(abs(residual_sales_price_percent)),
+                                     MAE = mean(abs(residual_sales_price)),
+                                     PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
+                                     COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
+                                     PRD = mean(ratio) / (sum(predicted_sales_price) / sum(sales_price)),
+                                     .groups = "drop")
+
+performance_municipality_type <- residual_df %>%
+                                 mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
+                                 group_by(dataset_type, municipality_type) %>%
+                                 summarise(MALE = mean(abs(residual_sales_price_log)),
+                                           MAPE = mean(abs(residual_sales_price_percent)),
+                                           MAE = mean(abs(residual_sales_price)),
+                                           PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
+                                           COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
+                                           .groups = "drop")
+
+performance <- bind_rows(performance_countrywide, performance_municipality_type)
+
+municipality_levels <- c("Countrywide", sort(setdiff(unique(performance$municipality_type), "Countrywide")))
+
+performance_sorted <- performance %>%
+                      mutate(dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+                             municipality_type = factor(municipality_type, levels = municipality_levels),
+                             MAE = round(MAE,0),
+                             PRD = ifelse(is.na(PRD), "", round(PRD, 2))) %>%
+                      arrange(municipality_type, dataset_type)  %>% 
+                      rename(Type = dataset_type,
+                             `Municipality type` = municipality_type,
+                             `MAPE [%]` = MAPE,
+                             `MAE [DKK]` = MAE,
+                             `PM20 [%]` = PM20,
+                             `COD [%]` = COD)
+
+#standard table
+#knitr::kable(performance_sorted, digits = 2, caption = "Model Performance by Municipality Type")
+
+#nicer table
+kable(performance_sorted %>% 
+select(-`Municipality type`), 
+       digits = 2, 
+       caption = "Model Performance by Municipality Type", 
+       booktabs = TRUE) %>%
+kable_styling(full_width = FALSE, position = "center") %>%
+group_rows("Countrywide", 1, 2) %>%
+group_rows("Capital", 3, 4) %>%
+group_rows("Commuter", 5, 6) %>%
+group_rows("Large city", 7, 8) %>%
+group_rows("Provincial", 9, 10) %>%
+group_rows("Rural", 11, 12)
+
+tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
+                   format = "latex", booktabs = TRUE, digits = 2,
+                   caption = "Model performance by municipality type.",
+                   label = "perf_by_muni") %>%
+             kable_styling(full_width = FALSE, 
+                           position = "center", 
+                           latex_options = c("hold_position")) %>%
+             group_rows("Countrywide", 1, 2) %>%
+             group_rows("Capital", 3, 4) %>%
+             group_rows("Commuter", 5, 6) %>%
+             group_rows("Large city", 7, 8) %>%
+             group_rows("Provincial", 9, 10) %>%
+             group_rows("Rural", 11, 12)
+
+```
+
+
 
 
 ## 5. Standardization
@@ -328,6 +558,8 @@ dataset_lot_sales_cv_standardized$year_built <- 1970
 dataset_lot_sales_cv_standardized$year_rebuilt <- 1970
 dataset_lot_sales_cv_standardized$living_space <- 140
 dataset_lot_sales_cv_standardized$lot_size <- 800
+dataset_lot_sales_cv_standardized$maximum_coverage_percentage <- 30
+dataset_lot_sales_cv_standardized$number_of_divisions <- 1
 dataset_lot_sales_cv_standardized$number_of_bathrooms <- 1
 dataset_lot_sales_cv_standardized$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
 dataset_lot_sales_cv_standardized$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
@@ -335,10 +567,13 @@ dataset_lot_sales_cv_standardized$wall_type <- factor("Brick", levels = levels(a
 dataset_lot_sales_cv_standardized$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
 
 #augment properties
+dataset_properties_standardized <- dataset_properties
 dataset_properties$year_built <- 1970
 dataset_properties$year_rebuilt <- 1970
 dataset_properties$living_space <- 140
 dataset_properties$lot_size <- 800
+dataset_properties$maximum_coverage_percentage <- 30
+dataset_properties$number_of_divisions <- 1
 dataset_properties$number_of_bathrooms <- 1
 dataset_properties$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
 dataset_properties$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
