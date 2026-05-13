@@ -1858,42 +1858,42 @@ other_sales <- other_sales %>%
 
 # 3. XGboost Models (fitted to log sales prices and GAM residuals)
 
-dummy_model <- dummyVars(~ roof_type +
-                           wall_type +
-                           heating_type +
-                           house_type +
-                           municipality_type + 
-                           municipality +
-                           province +
-                           region,
-                         data = other_sales)
+dummy_model_other <- dummyVars(~ roof_type +
+                                 wall_type +
+                                 heating_type +
+                                 house_type +
+                                 municipality_type + 
+                                 municipality +
+                                 province +
+                                 region,
+                               data = other_sales)
 
-categorical_encoded <- predict(dummy_model, newdata = other_sales)
+categorical_encoded_other <- predict(dummy_model_other, newdata = other_sales)
 
-X <- other_sales %>%
-     select(coordinate_east,
-            coordinate_north,
-            number_of_bathrooms,
-            number_of_rooms,
-            number_of_floors,
-            year_built,
-            year_rebuilt,
-            living_space,
-            lot_size,
-            coast_distance,
-            lake_distance,
-            stream_distance,
-            road_distance,
-            highway_distance,
-            train_station_distance,
-            railway_distance,
-            windturbine_distance,
-            forest_size,
-            ocean_view,
-            lake_view) %>%
-      as.matrix()
+X_other <- other_sales %>%
+           select(coordinate_east,
+                  coordinate_north,
+                  number_of_bathrooms,
+                  number_of_rooms,
+                  number_of_floors,
+                  year_built,
+                  year_rebuilt,
+                  living_space,
+                  lot_size,
+                  coast_distance,
+                  lake_distance,
+                  stream_distance,
+                  road_distance,
+                  highway_distance,
+                  train_station_distance,
+                  railway_distance,
+                  windturbine_distance,
+                  forest_size,
+                  ocean_view,
+                  lake_view) %>%
+            as.matrix()
 
-X_full <- cbind(X, categorical_encoded)
+X_full_other <- cbind(X_other, categorical_encoded_other)
 
 if (load){
 
@@ -1903,7 +1903,7 @@ if (load){
 } else{
 
   #on log sales price
-  dtrain <- xgb.DMatrix(data = X_full, label = other_sales$log_sales_price_indexed)
+  dtrain <- xgb.DMatrix(data = X_full_other, label = other_sales$log_sales_price_indexed)
 
   xgb_model <- xgboost(
     data = dtrain,
@@ -1919,7 +1919,7 @@ if (load){
   saveRDS(xgb_model, "saved_files/xgb_model.rds")
   
   #on log residuals
-  dtrain <- xgb.DMatrix(data = X_full, label = other_sales$residuals_gam)
+  dtrain <- xgb.DMatrix(data = X_full_other, label = other_sales$residuals_gam)
 
   xgb_model_residuals <- xgboost(
     data = dtrain,
@@ -1936,36 +1936,47 @@ if (load){
 
 }
 
-categorical_encoded <- predict(dummy_model, newdata = double_sales)
 
-X <- double_sales %>%
-     select(coordinate_east,
-            coordinate_north,
-            number_of_bathrooms,
-            number_of_rooms,
-            number_of_floors,
-            year_built,
-            year_rebuilt,
-            living_space,
-            lot_size,
-            coast_distance,
-            lake_distance,
-            stream_distance,
-            road_distance,
-            highway_distance,
-            train_station_distance,
-            railway_distance,
-            windturbine_distance,
-            forest_size,
-            ocean_view,
-            lake_view) %>%
-      as.matrix()
+categorical_encoded_double <- predict(dummy_model_other, newdata = double_sales)
 
-X_full <- cbind(X, categorical_encoded)
+X_double <- double_sales %>%
+            select(coordinate_east,
+                   coordinate_north,
+                   number_of_bathrooms,
+                   number_of_rooms,
+                   number_of_floors,
+                   year_built,
+                   year_rebuilt,
+                   living_space,
+                   lot_size,
+                   coast_distance,
+                   lake_distance,
+                   stream_distance,
+                   road_distance,
+                   highway_distance,
+                   train_station_distance,
+                   railway_distance,
+                   windturbine_distance,
+                   forest_size,
+                   ocean_view,
+                   lake_view) %>%
+            as.matrix()
+
+X_full_double <- cbind(X_double, categorical_encoded_double)
+
+missing_cols <- setdiff(colnames(X_full_other), colnames(X_full_double))
+
+if (length(missing_cols) > 0) {
+  
+  X_full_double <- cbind(X_full_double,
+                         matrix(0, nrow = nrow(X_full_double), ncol = length(missing_cols), dimnames = list(NULL, missing_cols)))
+}
+
+X_full_double <- X_full_double[, colnames(X_full_other), drop = FALSE]
 
 double_sales <- double_sales %>% 
-                mutate(residuals_xgb = log_sales_price_indexed - predict(xgb_model, X_full),
-                       residuals_hybrid = residuals_gam - predict(xgb_model_residuals, X_full))
+                mutate(residuals_xgb = log_sales_price_indexed - predict(xgb_model, X_full_double),
+                       residuals_hybrid = residuals_gam - predict(xgb_model_residuals, X_full_double))
 
 
 # 4. Noise model
