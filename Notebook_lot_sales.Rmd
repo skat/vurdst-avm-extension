@@ -44,7 +44,7 @@ set.seed(123) # for reproducibility
 N <- 4 # number of CV folds
 k_spatial = 2000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
-load <- FALSE # determines whether or not to preload models in the various chunks
+load <- TRUE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
@@ -187,7 +187,7 @@ dataset <- dataset %>% mutate(gross_floor_area = lot_size * maximum_coverage_per
 ```
 
 
-## 5. Extract property types 
+## 4. Extract property types 
 Extract different types of properties in the dataset for working with them separately. 
 
 
@@ -418,8 +418,6 @@ for (var in names(smooth_variables)) {
 }
 
 
-saveRDS(plot_smooths, "saved_files/plot_smooths.rds")
-
 #manual axis specifications of some ill-behaved smooths to make plots easier to understand
 plot_smooths$stream_distance <- plot_smooths$stream_distance + ylim(-0.03,0.1)
 plot_smooths$lake_view <- plot_smooths$lake_view + xlim(0.0,10000) + ylim(0, 0.6)
@@ -549,59 +547,66 @@ tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
 
 
 
-## 5. Standardization
+#### 5. Standardization
 The lot sales and properties are augmented with a fictitious single family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
 
 ```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
-#augment lot sales
-dataset_lot_sales_cv_standardized <- dataset_lot_sales_cv
-dataset_lot_sales_cv_standardized$year_built <- 1970
-dataset_lot_sales_cv_standardized$year_rebuilt <- 1970
-dataset_lot_sales_cv_standardized$living_space <- 140
-dataset_lot_sales_cv_standardized$lot_size <- 800
-dataset_lot_sales_cv_standardized$maximum_coverage_percentage <- 30
-dataset_lot_sales_cv_standardized$number_of_divisions <- 1
-dataset_lot_sales_cv_standardized$number_of_bathrooms <- 1
-dataset_lot_sales_cv_standardized$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
-dataset_lot_sales_cv_standardized$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
-dataset_lot_sales_cv_standardized$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
-dataset_lot_sales_cv_standardized$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
 
-#augment properties
-dataset_properties_standardized <- dataset_properties
-dataset_properties_standardized$year_built <- 1970
-dataset_properties_standardized$year_rebuilt <- 1970
-dataset_properties_standardized$living_space <- 140
-dataset_properties_standardized$lot_size <- 800
-dataset_properties_standardized$maximum_coverage_percentage <- 30
-dataset_properties_standardized$unused_floor_area <- 0
-dataset_properties_standardized$number_of_divisions <- 1
-dataset_properties_standardized$number_of_bathrooms <- 1
-dataset_properties_standardized$house_type <- factor("Detached", levels = levels(as.factor(dataset$house_type)))
-dataset_properties_standardized$roof_type <- factor("Fiber cement", levels = levels(as.factor(dataset$roof_type)))
-dataset_properties_standardized$wall_type <- factor("Brick", levels = levels(as.factor(dataset$wall_type)))
-dataset_properties_standardized$heating_type <- factor("District heating", levels = levels(as.factor(dataset$heating_type)))
-
-#calculate standarized prices for each model 
-
-for (model_name in names(models)) {
+standardize_property <- function(data, reference_data) {
   
-  dataset_lot_sales_cv[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
-  dataset_properties[[paste0("sales_price_standardized_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties, type = "response"))
+    data %>% mutate(year_built = 1970,
+                    year_rebuilt = 1970,
+                    living_space = 140,
+                    lot_size = 800,
+                    maximum_coverage_percentage = 30,
+                    unused_floor_area = 0,
+                    number_of_divisions = 1,
+                    number_of_bathrooms = 1,
+                    house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
+                    roof_type = factor("Fiber cement", levels = levels(factor(reference_data$roof_type))),
+                    wall_type = factor("Brick", levels = levels(factor(reference_data$wall_type))),
+                    heating_type = factor("District heating", levels = levels(factor(reference_data$heating_type))))
+  }
 
+
+if (load) {
+  
+  dataset_properties <- readRDS("saved_files_lot_sales/dataset_properties_standardized.rds")
+  dataset_lot_sales_cv <- readRDS("~/vurdst-avm-extension/saved_files_lot_sales/dataset_lot_sales_cv_standardized.rds")
+  
+
+} else {
+  
+  #standardize
+  dataset_lot_sales_cv_standardized <- standardize_property(dataset_lot_sales_cv, reference_data = dataset)
+  dataset_properties_standardized <- standardize_property(dataset_properties, reference_data = dataset)
+  
+  #calculate standarized prices for each model 
+  for (model_name in names(models)) {
+    
+    dataset_lot_sales_cv[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
+    dataset_properties[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties_standardized, type = "response"))
+    dataset_properties[[paste0("property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties, type = "response"))
+  
+  }
+
+  #save
+  saveRDS(dataset_lot_sales_cv, "saved_files_lot_sales/dataset_lot_sales_cv_standardized.rds")
+  saveRDS(dataset_properties, "saved_files_lot_sales/dataset_properties_standardized.rds")
+  
 }
 
 
-saveRDS(dataset_lot_sales_cv, "saved_files_lot_sales/dataset_lot_sales_cv.rds")
-saveRDS(dataset_properties, "saved_files_lot_sales/dataset_properties.rds")
+
 
 ```
 
 
-## 6. Lot models
+#### 6. Lot models
 
 ```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+
 
 # -------------------------
 # 1. Model fitting functions
@@ -609,47 +614,40 @@ saveRDS(dataset_properties, "saved_files_lot_sales/dataset_properties.rds")
 
 fit_fold_model <- function(formula, data, fold) {
   
-  training_subset <- data %>% 
-    filter(validation_set != fold)
+  training_subset <- data %>% filter(validation_set != fold)
   
-  bam(
-    formula,
-    data = training_subset,
-    family = tw(link = log),
-    method = "fREML"
-  )
+  bam(formula,
+      data = training_subset,
+      family = tw(link = log),
+      method = "fREML")
+  
 }
 
 fit_model_set <- function(formula, data, N) {
   
   models <- future_lapply(seq_len(N), function(i) {
-    fit_fold_model(
-      formula = formula,
-      data = data,
-      fold = i
-    )
+    
+    fit_fold_model(formula = formula,
+                   data = data,
+                   fold = i)
+    
   })
   
   names(models) <- paste0("Model", seq_len(N))
   
   models
+  
 }
 
 # -------------------------
 # 2. Formula helpers
 # -------------------------
 
-make_formula_from_terms <- function(terms) {
-  as.formula(paste("sales_price ~", paste(terms, collapse = " + ")))
-}
+make_formula_from_terms <- function(terms) {as.formula(paste("sales_price ~", paste(terms, collapse = " + ")))}
 
 make_standardized_formula <- function(std_var, extra_terms = NULL, coord_term = NULL) {
   
-  rhs <- c(
-    paste0("s(", std_var, ", k = 10)"),
-    extra_terms,
-    coord_term
-  )
+  rhs <- c(paste0("s(", std_var, ", k = 10)"), extra_terms, coord_term)
   
   make_formula_from_terms(rhs)
 }
@@ -658,49 +656,34 @@ make_standardized_formula <- function(std_var, extra_terms = NULL, coord_term = 
 # 3. Standardized-price model grid
 # -------------------------
 
-standard_vars <- paste0("sales_price_standardized_Model", seq_len(N))
+standard_vars <- paste0("standard_property_value_Model", seq_len(N))
 
 base_terms <- list(
+  
   none = NULL,
   
   lot_size = "s(lot_size, k = 6, pc = 800)",
   
-  divisions = "s(number_of_divisions, k = 3, pc = 1)",
-  
   coverage = "s(maximum_coverage_percentage, k = 3, pc = 30)",
   
-  lot_size_divisions_coverage = c(
-    "s(lot_size, k = 6, pc = 800)",
-    "s(number_of_divisions, k = 3, pc = 1)",
-    "s(maximum_coverage_percentage, k = 3, pc = 30)"
-  ),
+  divisions = "s(number_of_divisions, k = 3, pc = 1)",
   
-  te_lot_coverage_divisions = 
-    "te(lot_size, maximum_coverage_percentage, number_of_divisions, k = c(6, 3, 3))",
+  lot_size_divisions_coverage = c("s(lot_size, k = 6, pc = 800)", "s(number_of_divisions, k = 3, pc = 1)", "s(maximum_coverage_percentage, k = 3, pc = 30)"),
   
-  gross_floor_area = 
-    "s(gross_floor_area, k = 6, pc = 240)",
+  gross_floor_area = "s(gross_floor_area, k = 6, pc = 240)",
   
-  gross_remaining_area = c(
-    "s(gross_floor_area, k = 6, pc = 240)",
-    "s(remaining_floor_area, k = 6, pc = 560)"
-  )
+  gross_remaining_area = c("s(gross_floor_area, k = 6, pc = 240)", "s(remaining_floor_area, k = 6, pc = 560)"),
+  
+  gross_remaining_area = c("s(gross_floor_area, k = 6, pc = 240)", "s(remaining_floor_area, k = 6, pc = 560)",  "s(number_of_divisions, k = 3, pc = 1)")
+  
 )
 
-coord_terms <- list(
-  no_coords = NULL,
-  coords = "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))"
-)
+coord_terms <- list(no_coords = NULL, coords = "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))")
 
-model_grid <- expand.grid(
-  std_var = standard_vars,
-  base_name = names(base_terms),
-  coord_name = names(coord_terms),
-  stringsAsFactors = FALSE
-)
+model_grid <- expand.grid(std_var = standard_vars, base_name = names(base_terms), coord_name = names(coord_terms), stringsAsFactors = FALSE)
 
-model_formulas <- pmap(
-  model_grid,
+model_formulas <- pmap(model_grid,
+                       
   function(std_var, base_name, coord_name) {
     make_standardized_formula(
       std_var = std_var,
@@ -725,22 +708,20 @@ names(model_formulas) <- paste0(
 # 4. Direct lot model terms
 # -------------------------
 
-direct_lot_terms <- c(
-  "s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))",
-  "s(sales_date_numeric, k = 5, by = municipality_type, pc = 2024)",
-  "s(lot_size, k = 5, by = municipality_type, pc = 800)",
-  "s(coast_distance, k = 5, pc = 1500)",
-  "s(lake_distance, k = 5, pc = 500)",
-  "s(stream_distance, k = 5, pc = 1000)",
-  "s(road_distance, k = 5, pc = 2000)",
-  "s(highway_distance, k = 5, pc = 2000)",
-  "s(train_station_distance, k = 5, pc = 2000)",
-  "s(railway_distance, k = 5, pc = 1000)",
-  "s(windturbine_distance, k = 5, pc = 3000)",
-  "s(ocean_view, k = 5, pc = 0)",
-  "s(lake_view, k = 5, pc = 0)",
-  "s(forest_size, k = 5, pc = 0)"
-)
+direct_lot_terms <- c("s(coordinate_east, coordinate_north, k = 300, pc = c(697000, 6150000))",
+                      "s(sales_date_numeric, k = 5, by = municipality_type, pc = 2024)",
+                      "s(lot_size, k = 5, by = municipality_type, pc = 800)",
+                      "s(coast_distance, k = 5, pc = 1500)",
+                      "s(lake_distance, k = 5, pc = 500)",
+                      "s(stream_distance, k = 5, pc = 1000)",
+                      "s(road_distance, k = 5, pc = 2000)",
+                      "s(highway_distance, k = 5, pc = 2000)",
+                      "s(train_station_distance, k = 5, pc = 2000)",
+                      "s(railway_distance, k = 5, pc = 1000)",
+                      "s(windturbine_distance, k = 5, pc = 3000)",
+                      "s(ocean_view, k = 5, pc = 0)",
+                      "s(lake_view, k = 5, pc = 0)",
+                      "s(forest_size, k = 5, pc = 0)")
 
 # -------------------------
 # 5. Extra model families
@@ -749,17 +730,13 @@ direct_lot_terms <- c(
 extra_formulas <- list()
 
 # 5.1 Direct lot model, no standardized price
-extra_formulas[["direct_lot_model"]] <- 
-  make_formula_from_terms(direct_lot_terms)
+extra_formulas[["direct_lot_model"]] <- make_formula_from_terms(direct_lot_terms)
 
 # 5.2 Direct lot model + standardized price
 for (std_var in standard_vars) {
   
-  extra_formulas[[paste0("direct_lot_model_plus_", std_var)]] <-
-    make_formula_from_terms(c(
-      paste0("s(", std_var, ", k = 10)"),
-      direct_lot_terms
-    ))
+  extra_formulas[[paste0("direct_lot_model_plus_", std_var)]] <- make_formula_from_terms(c(paste0("s(", std_var, ", k = 10)"), direct_lot_terms))
+  
 }
 
 # 5.3 Standardized price by municipality type
@@ -814,28 +791,26 @@ for (std_var in standard_vars) {
 # Combine all formulas
 model_formulas <- c(model_formulas, extra_formulas)
 
-# -------------------------
-# 6. Fit all models
-# -------------------------
 
-models <- lapply(names(model_formulas), function(model_name) {
+if (load) {
+  
+  models <- readRDS("saved_files_lot_sales/models_lot_sales.rds")
+
+} else {
+
+  models <- lapply(names(model_formulas), function(model_name) {
   
   message("Fitting ", model_name, " ...")
   
-  fit_model_set(
-    formula = model_formulas[[model_name]],
-    data = dataset_lot_sales_cv,
-    N = N
-  )
-})
+  fit_model_set(formula = model_formulas[[model_name]], data = dataset_lot_sales_cv, N = N)})
 
-names(models) <- names(model_formulas)
+  names(models) <- names(model_formulas)
 
-# -------------------------
-# 7. Save output
-# -------------------------
+  saveRDS(models, "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.rds")
+  
+}
 
-saveRDS(models, "~/vurdst-avm-extension/saved_files_lot_sales/models_lot_sales.rds")
+
 ```
 
 
@@ -853,7 +828,7 @@ extract_standard_price_smooths <- function(models, x_min = 0, x_max = 1e7, n = 2
   
   imap_dfr(models, function(model_set, model_name) {
     
-    std_var <- str_extract(model_name, "sales_price_standardized_Model[1-4]")
+    std_var <- str_extract(model_name, "standard_property_value_Model[1-4]")
     
     if (is.na(std_var)) return(tibble())
     
@@ -894,7 +869,7 @@ extract_standard_price_smooths <- function(models, x_min = 0, x_max = 1e7, n = 2
           lot_split = sub("^Model", "Lot split ", lot_split_name),
           specification = model_name %>%
             str_remove("^model_[0-9]+_") %>%
-            str_remove("sales_price_standardized_Model[1-4]_"),
+            str_remove("standard_property_value_Model[1-4]_"),
           standardized_price = .data[[std_var]],
           partial_effect = .estimate,
           partial_lower = .estimate - 1.96 * .se,
@@ -981,7 +956,7 @@ plot_standardized_smooth_response
 
 ```
 
-#### 7. Other 1D smooth effects 
+#### 8. Other 1D smooth effects 
 
 ```{r Other 1D smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -989,10 +964,10 @@ plot_standardized_smooth_response
 # 1. Reference values/ranges
 # -------------------------
 
-reference_values <- list(sales_price_standardized_Model1 = 5e6,
-                         sales_price_standardized_Model2 = 5e6,
-                         sales_price_standardized_Model3 = 5e6,
-                         sales_price_standardized_Model4 = 5e6,
+reference_values <- list(standard_property_value_Model1 = 5e6,
+                         standard_property_value_Model2 = 5e6,
+                         standard_property_value_Model3 = 5e6,
+                         standard_property_value_Model4 = 5e6,
                          lot_size = 800,
                          number_of_divisions = 1,
                          maximum_coverage_percentage = 30,
@@ -1021,7 +996,7 @@ extract_1d_smooths <- function(models, smooth_vars, reference_values, smooth_ran
   
   imap_dfr(models, function(model_set, model_name) {
     
-    std_var <- str_extract(model_name, "sales_price_standardized_Model[1-4]")
+    std_var <- str_extract(model_name, "standard_property_value_Model[1-4]")
     
     if (is.na(std_var)) return(tibble())
     
@@ -1070,7 +1045,7 @@ extract_1d_smooths <- function(models, smooth_vars, reference_values, smooth_ran
             model_name = model_name,
             specification = model_name %>%
               str_remove("^model_[0-9]+_") %>%
-              str_remove("sales_price_standardized_Model[1-4]_"),
+              str_remove("standard_property_value_Model[1-4]_"),
             property_model = str_extract(std_var, "Model[1-4]"),
             lot_split = sub("^Model", "Lot split ", lot_split_name),
             smooth_var = smooth_var,
@@ -1136,12 +1111,204 @@ plot_1d_smooths_list$remaining_floor_area
 ```
 
 
+#### 9. Spatial smooths 
+
+```{r Spatial smooths, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+# -------------------------
+# 1. Helper: extract metadata
+# -------------------------
+
+extract_std_var <- function(model_name) {
+  str_extract(model_name, "standard_property_value_Model[1-4]")
+}
+
+extract_specification <- function(model_name) {
+  model_name %>%
+    str_remove("^model_[0-9]+_") %>%
+    str_remove("standard_property_value_Model[1-4]_")
+}
+
+# -------------------------
+# 2. Reference values for prediction grid
+# -------------------------
+
+reference_values <- list(
+  standard_property_value_Model1 = 5e6,
+  standard_property_value_Model2 = 5e6,
+  standard_property_value_Model3 = 5e6,
+  standard_property_value_Model4 = 5e6,
+  lot_size = 800,
+  number_of_divisions = 1,
+  maximum_coverage_percentage = 30,
+  gross_floor_area = 240,
+  remaining_floor_area = 560
+)
+
+# -------------------------
+# 3. Predict spatial smooths
+# -------------------------
+
+extract_spatial_smooths <- function(models, coordinate_grid, reference_values) {
+  
+  imap(models, function(model_set, model_name) {
+    
+    std_var <- extract_std_var(model_name)
+    specification <- extract_specification(model_name)
+    property_model <- str_extract(std_var, "Model[1-4]")
+    
+    imap(model_set, function(mod, lot_split_name) {
+      
+      smooth_labels <- vapply(mod$smooth, `[[`, character(1), "label")
+      
+      spatial_label <- smooth_labels[
+        str_detect(smooth_labels, "coordinate_east") &
+          str_detect(smooth_labels, "coordinate_north")
+      ]
+      
+      if (length(spatial_label) == 0) {
+        return(NULL)
+      }
+      
+      spatial_label <- spatial_label[1]
+      
+      grid <- coordinate_grid
+      
+      # Add reference values required by model
+      for (nm in names(reference_values)) {
+        if (!nm %in% names(grid)) {
+          grid[[nm]] <- reference_values[[nm]]
+        }
+      }
+      
+      # Make sure correct standardized-property variable is present
+      if (!is.na(std_var)) {
+        grid[[std_var]] <- reference_values[[std_var]]
+      }
+      
+      # Add any remaining missing model variables
+      model_data <- model.frame(mod)
+      needed_vars <- all.vars(formula(mod))
+      missing_vars <- setdiff(needed_vars, names(grid))
+      
+      for (var in missing_vars) {
+        x <- model_data[[var]]
+        
+        if (is.factor(x)) {
+          grid[[var]] <- factor(
+            rep(levels(x)[1], nrow(grid)),
+            levels = levels(x)
+          )
+        } else {
+          grid[[var]] <- 0
+        }
+      }
+      
+      terms <- predict.gam(
+        mod,
+        newdata = grid,
+        type = "terms",
+        se.fit = TRUE
+      )
+      
+      fit_terms <- as.data.frame(terms$fit)
+      se_terms <- as.data.frame(terms$se.fit)
+      
+      effect <- fit_terms[[spatial_label]]
+      se <- se_terms[[spatial_label]]
+      
+      if ("ocean" %in% names(grid)) {
+        effect[grid$ocean] <- NA
+        se[grid$ocean] <- NA
+      }
+      
+      grid %>%
+        mutate(
+          model_name = model_name,
+          specification = specification,
+          property_model = property_model,
+          lot_split = sub("^Model", "Lot split ", lot_split_name),
+          spatial_label = spatial_label,
+          effect_coordinates = effect,
+          se_coordinates = se
+        )
+    })
+  }) %>%
+    unlist(recursive = FALSE) %>%
+    compact()
+}
+
+spatial_results <- extract_spatial_smooths(
+  models = models,
+  coordinate_grid = coordinate_grid,
+  reference_values = reference_values
+)
+
+spatial_df <- bind_rows(spatial_results)
+
+# -------------------------
+# 4. Global limits
+# -------------------------
+
+max_abs_effect <- max(abs(spatial_df$effect_coordinates), na.rm = TRUE)
+effect_limits <- c(-max_abs_effect, max_abs_effect)
+
+se_limits <- c(0, max(spatial_df$se_coordinates, na.rm = TRUE))
+
+# -------------------------
+# 5. Plotting function
+# -------------------------
+
+plot_spatial_from_df <- function(df, title_prefix, effect_limits, se_limits) {
+  
+  plot_effect <- ggplot(df) +
+                 geom_tile(aes(x = coordinate_east,
+                               y = coordinate_north,
+                               fill = effect_coordinates)) +
+                 scale_fill_scico(palette = "vik",
+                                  name = "Partial effect",
+                                  na.value = "white",
+                                  limits = effect_limits) +
+                geom_contour(aes(x = coordinate_east,
+                                 y = coordinate_north,
+                                 z = as.numeric(!ocean)),
+                             color = "black",
+                             linewidth = 0.3) +
+                coord_fixed() +
+                labs(title = paste(title_prefix, "- effect")) +
+                theme_void() +
+                theme(legend.position = c(0.85, 0.75),
+                      legend.title = element_text(size = 9),
+                      legend.text = element_text(size = 8))
+  
+  plot_se <- ggplot(df) +
+             geom_tile(aes(x = coordinate_east,
+                           y = coordinate_north,
+                           fill = se_coordinates)) +
+             scale_fill_scico(palette = "vik",
+                              name = expression(sigma),
+                              na.value = "white",
+                              limits = se_limits) +
+            geom_contour(aes(x = coordinate_east,
+                             y = coordinate_north,
+                             z = as.numeric(!ocean)),
+                         color = "black",
+                         linewidth = 0.3) +
+            coord_fixed() +
+            labs(title = paste(title_prefix, "- SE")) +
+            theme_void() +
+            theme(legend.position = c(0.85, 0.75),
+                  legend.title = element_text(size = 9),
+                  legend.text = element_text(size = 8))
+  
+  list(effect = plot_effect, se = plot_se)
+}
+```
 
 
 #### 9. Performance
 
 ```{r Performance, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
-
 
 get_residuals <- function(model_set, dataset) {
   
@@ -1218,7 +1385,46 @@ saveRDS(performance_countrywide, "saved_files_lot_sales/performance_countrywide.
 ```
 
 
-#### 10. Model stability
+#### 10. Building and lot values
+
+```{r Building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+property_decomposition <- list()
+
+for (model_name in names(models)) {
+  
+  property_model <- str_extract(model_name, "Model[1-4]")
+  
+  property_value_var <- paste0("property_value_", property_model)
+  standard_property_value_var <- paste0("standard_property_value_", property_model)
+  
+  if (is.na(property_model)){
+    
+    property_value_var <- "property_value_Model1"
+    standard_property_value_var <- "standard_property_value_Model1"
+    
+  }
+  
+  property_decomposition[[model_name]] <- list()
+  
+  for (lot_split_name in names(models[[model_name]])) {
+    
+    lot_value <- as.vector(predict.gam(models[[model_name]][[lot_split_name]], newdata = dataset_properties, type = "response"))
+    
+    property_decomposition[[model_name]][[lot_split_name]] <- tibble(id = dataset_properties$id,
+                                                                     property_value = dataset_properties[[property_value_var]],
+                                                                     standard_property_value = dataset_properties[[standard_property_value_var]],
+                                                                     lot_value = lot_value,
+                                                                     building_value = dataset_properties[[property_value_var]] - lot_value,
+                                                                     standard_building_value = dataset_properties[[standard_property_value_var]] - lot_value)
+  }
+}
+
+saveRDS(property_decomposition, "saved_files_lot_sales/property_decomposition.rds")
+```
+
+
+#### 11. Model stability
 
 ```{r Stability, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -1347,4 +1553,133 @@ plot_pairs <- imap(dataset_spread, function(df, model_name) {
 wrap_plots(flatten(plot_pairs), ncol = 2)
 ```
 
+#### 10. Building values
+
+```{r Building values, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+cap <- 0.1
+
+spread_model_set <- function(model_set, dataset) {
+  
+  predictions <- imap(model_set, function(model, name) {
+    preds <- predict.gam(model, newdata = dataset, type = "link", se.fit = TRUE)
+
+    tibble(
+      !!paste0("pred_", name) := as.vector(preds$fit),
+      !!paste0("sigma_", name) := as.vector(preds$se.fit)
+    )
+  })
+
+  pred_matrix <- bind_cols(predictions)
+
+  dataset_out <- bind_cols(dataset, pred_matrix)
+
+  pred_cols <- grep("^pred_", names(dataset_out), value = TRUE)
+  sigma_cols <- grep("^sigma_", names(dataset_out), value = TRUE)
+
+  dataset_out %>%
+    rowwise() %>%
+    mutate(
+      sigma_Ensemble = sd(c_across(all_of(pred_cols))),
+      mean_prediction = mean(c_across(all_of(pred_cols))),
+      mean_sigma_model = mean(c_across(all_of(sigma_cols)))
+    ) %>%
+    ungroup()
+}
+
+
+dataset_spread <- lapply(names(models), function(model_label) {
+  message("Predicting for ", model_label, " ...")
+  spread_model_set(models[[model_label]], dataset_properties)
+})
+
+names(dataset_spread) <- names(models)
+
+
+### Histograms 
+
+spread_long <- bind_rows(
+  lapply(names(dataset_spread), function(model_label) {
+    dataset_spread[[model_label]] %>%
+      transmute(
+        Model = model_label,
+        sigma_Ensemble = sigma_Ensemble,
+        sigma_Model1 = sigma_Model1
+      )
+  })
+)
+
+plot_ensemble <- ggplot(spread_long,
+                        aes(x = sigma_Ensemble, color = Model, fill = Model)) +
+                 geom_density(alpha = 0.15, linewidth = 0.8) +
+                              labs(x = "Ensemble spread (link scale)",
+                                   y = "Density") +
+                 xlim(0, cap) +
+                 theme_minimal()
+
+plot_model1 <- ggplot(spread_long,
+                      aes(x = sigma_Model1, color = Model, fill = Model)) +
+               geom_density(alpha = 0.15, linewidth = 0.8) +
+                            labs(x = "GAM uncertainty from Model1 (link scale)",
+                                 y = "Density") +
+               xlim(0, cap) +
+               theme_minimal()
+
+
+plot_ensemble
+plot_model1
+
+
+### Geographic plots
+
+plot <- ggplot() +
+        geom_contour(data = coordinate_grid,
+                     aes(x = coordinate_east,
+                         y = coordinate_north,
+                         z = as.numeric(!ocean)),
+                         color = "black",
+                         size = 0.1) +
+        coord_fixed() +
+        theme_void(base_size = 10)
+
+
+plot_pairs <- imap(dataset_spread, function(df, model_name) {
+  
+  # GAM uncertainty plot
+  plot_gam <- plot +
+              geom_point(data = df,
+                         aes(x = coordinate_east,
+                             y = coordinate_north,
+                             color = sigma_Model1),
+                         size = 0.2) +
+              scale_color_viridis_c(option = "plasma",
+                                    name = "GAM uncertainty",
+                                    limits = c(0, cap),
+                                    oob = squish) +
+              labs(title = paste(model_name, "- GAM uncertainty")) +
+              theme(legend.position = c(0.7, 0.75),
+                    legend.box = "horizontal")
+  
+  # Ensemble uncertainty plot
+  plot_ensemble <- plot +
+    geom_point(data = df,
+               aes(x = coordinate_east,
+                   y = coordinate_north,
+                   color = sigma_Ensemble),
+               size = 0.2) +
+    scale_color_viridis_c(option = "plasma",
+                          name = "Ensemble uncertainty",
+                          limits = c(0, cap),
+                          oob = squish) +
+    labs(title = paste(model_name, "- Ensemble uncertainty")) +
+    theme(legend.position = c(0.7, 0.75),
+          legend.box = "horizontal")
+  
+  list(gam_uncertainty = plot_gam, ensemble_uncertainty = plot_ensemble)
+
+})
+
+
+wrap_plots(flatten(plot_pairs), ncol = 2)
+```
 
