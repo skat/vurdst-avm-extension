@@ -6,7 +6,6 @@ checkpoints/
 checkpoints_lot_sales/
 Notebook_files/
 Notebook.pdf
-Notebook_ny.pdf
 Notebook.log
 Notebook.tex
 Notebook_lot_sales_files/
@@ -14,4 +13,5 @@ Notebook_lot_sales.pdf
 Notebook_lot_sales.log
 Notebook.tex
 Dataset.pdf
+Dataset_ny.pdf
 Paper_figures/
