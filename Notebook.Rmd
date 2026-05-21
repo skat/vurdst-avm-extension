@@ -419,49 +419,43 @@ se_limits <- c(0, max(c(all_ses_models, se_across_models), na.rm = TRUE))  # SEs
 plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range) {
 
   plot_effect <- ggplot(data = grid) +
-    geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
-    labs(x = "", y = "") +
-    scale_fill_scico(
-      palette = "vik",
-      name = paste("Partial effect", sub("^Model", "Model ", model_name)),
-      na.value = "white",
-      limits = effect_range
-    ) +
-    geom_contour(
-      aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-      color = "black", size = 0.4
-    ) +
-    coord_fixed() +
-    theme_void() +
-    theme(
-      text = element_text(size = 12),
-      legend.position = c(0.85, 0.75),
-      legend.title = element_text(size = 9, margin = margin(b = 5)),
-      legend.text = element_text(size = 9),
-      legend.title.align = 0.5
-    )
+                 geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
+                 labs(x = "", y = "") +
+                 scale_fill_scico(palette = "vik",
+                                  name = paste("Partial effect", sub("^Model", "Model ", model_name)),
+                                  na.value = "white",
+                                  limits = effect_range) +
+                 geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                              color = "black", 
+                              size = 0.4) +
+                 coord_fixed() +
+                 theme_void() +
+                 theme(text = element_text(size = 12),
+                       legend.position = c(0.85, 0.75),
+                       legend.title = element_text(size = 9, margin = margin(b = 5)),
+                       legend.text = element_text(size = 9),
+                       legend.title.align = 0.5)
   
   model_label <- sub("^Model", "Model ", model_name)
 
   plot_se <- ggplot(data = grid) +
-    geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
-    labs(x = "", y = "") +
-    scale_fill_scico(
-    palette = "vik",
-    name = bquote(sigma[.(model_label)]),
-    na.value = "white",
-    limits = se_range) +
-    geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-                 color = "black", 
-                 size = 0.4) +
-    coord_fixed() +
-    theme_void() +
-    theme(
-      text = element_text(size = 12),
-      legend.position = c(0.85, 0.75),
-      legend.title = element_text(size = 9, margin = margin(b = 5)),
-      legend.text = element_text(size = 9),
-      legend.title.align = 0.5)
+             geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
+             labs(x = "", y = "") +
+             scale_fill_scico(
+             palette = "vik",
+             name = bquote(sigma[.(model_label)]),
+             na.value = "white",
+             limits = se_range) +
+             geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                          color = "black", 
+                          size = 0.4) +
+             coord_fixed() +
+             theme_void() +
+             theme(text = element_text(size = 12),
+                   legend.position = c(0.85, 0.75),
+                   legend.title = element_text(size = 9, margin = margin(b = 5)),
+                   legend.text = element_text(size = 9),
+                   legend.title.align = 0.5)
 
   list(effect = plot_effect, se = plot_se)
 }
@@ -482,25 +476,22 @@ base_grid2 <- base_grid
 base_grid2$se_across_models <- se_across_models  # <- bake it into the data
 
 plot_sd_across <- ggplot(data = base_grid2) +
-  geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
-  labs(x = "", y = "") +
-  scale_fill_scico(palette = "vik",
-                   name = expression(sigma[Ensemble]),
-                   na.value = "white",
-                   limits = se_limits) +
-  geom_contour(
-    aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-    color = "black", size = 0.4
-  ) +
-  coord_fixed() +
-  theme_void() +
-  theme(
-    text = element_text(size = 12),
-    legend.position = c(0.85, 0.75),
-    legend.title = element_text(size = 9, margin = margin(b = 5)),
-    legend.text = element_text(size = 9),
-    legend.title.align = 0.5
-  )
+                  geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
+                  labs(x = "", y = "") +
+                  scale_fill_scico(palette = "vik",
+                                   name = expression(sigma[Ensemble]),
+                                   na.value = "white",
+                                   limits = se_limits) +
+                  geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                               color = "black", 
+                               size = 0.4) +
+                  coord_fixed() +
+                  theme_void() +
+                  theme(text = element_text(size = 12),
+                        legend.position = c(0.85, 0.75),
+                        legend.title = element_text(size = 9, margin = margin(b = 5)),
+                        legend.text = element_text(size = 9),
+                        legend.title.align = 0.5)
 
 plot_spatial_smooths <- c(plot_spatial_smooths, list(plot_sd_across))
 saveRDS(plot_spatial_smooths, "saved_files/plot_spatial_smooths.rds")
@@ -567,22 +558,22 @@ for (var in names(smooth_variables)) {
                                  color = .data[[by_var_name]],
                                  linetype = Model, 
                                  group = interaction(Model, .data[[by_var_name]]))) +
-        geom_ribbon(data = subset(combined_df, Model == "Model 1"),
-                    aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
-                    alpha = 0.5, 
-                    color = NA) +
-        geom_line(linewidth = 1) +
-        labs(title = plot_title,
-             x = smooth_variables[[var]],
-             y = "Partial effect") +
-        scale_color_brewer(palette = "Dark2", name = "Municipality type") +
-        scale_linetype_manual(values = c("solid", 
-                                         "dashed", 
-                                         "dotted", 
-                                         "dotdash", 
-                                         "twodash", 
-                                         "longdash")) +
-        guides(fill = guide_legend(override.aes = list(linetype = 0)))
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                     aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
+                     alpha = 0.5, 
+                     color = NA) +
+         geom_line(linewidth = 1) +
+         labs(title = plot_title,
+              x = smooth_variables[[var]],
+              y = "Partial effect") +
+         scale_color_brewer(palette = "Dark2", name = "Municipality type") +
+         scale_linetype_manual(values = c("solid", 
+                                          "dashed", 
+                                          "dotted", 
+                                          "dotdash", 
+                                          "twodash", 
+                                          "longdash")) +
+         guides(fill = guide_legend(override.aes = list(linetype = 0)))
 
   } else {
 
