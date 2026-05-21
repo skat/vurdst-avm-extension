@@ -42,7 +42,7 @@ library(scales)
 # Global parameters
 set.seed(123) # for reproducibility
 N <- 4 # number of CV folds
-k_spatial = 500 # initial number of basis functions used in the spatial smooths
+k_spatial = 2000 # initial number of basis functions used in the spatial smooths
 k_other = 10 # initial number of basis functions used for other smooths
 load <- FALSE # determines whether or not to preload models in the various chunks
 plan(multisession, workers = N) #do as much as possible in parallel
@@ -69,12 +69,13 @@ This notebook provides a walkthrough of the analysis and results described in th
 # Dataset 
 
 ## 1. Description
-The analysis is based on a dataset of single family home sales in Denmark in the period 01/01/2014-01/01/2024, which is included as .csv-file in the same repository containing this notebook. The dataset is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
+The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from the period 01/01/2014-01/01/2024. The dataset, included as a .rds file in this repository, is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 dataset <- readRDS("dataset.rds")
-str(dataset)
+#The three types included in the dataset. This notebook only uses Property and Property Sales
+table(dataset$type)
 
 ```
 
@@ -242,15 +243,13 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
                                        windturbine_distance),
                                      ~ replace_na(., max(., na.rm = TRUE))))
 
-#check that there are no remaining NAs in sales data
-which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 
 ```
 
-## 3. Cross-Validation and Test Set
+## 3. Cross-Validation 
 A simple 4-fold cross-validation split is implemented in the code below. 
 
-```{r Test set and cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 # pick out sales and properties
 dataset_sales <- dataset %>% filter(type == "Property sale")
 dataset_properties <- dataset %>% 
@@ -268,6 +267,7 @@ dataset_sales_cv <- assign_cv_folds(dataset_sales, N = N, seed = 123)
 table(dataset_sales_cv$validation_set, useNA = "ifany")
 
 ```
+
 # GAM Models 
 
 ## 1. Model training
@@ -419,49 +419,43 @@ se_limits <- c(0, max(c(all_ses_models, se_across_models), na.rm = TRUE))  # SEs
 plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range) {
 
   plot_effect <- ggplot(data = grid) +
-    geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
-    labs(x = "", y = "") +
-    scale_fill_scico(
-      palette = "vik",
-      name = paste("Partial effect", sub("^Model", "Model ", model_name)),
-      na.value = "white",
-      limits = effect_range
-    ) +
-    geom_contour(
-      aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-      color = "black", size = 0.4
-    ) +
-    coord_fixed() +
-    theme_void() +
-    theme(
-      text = element_text(size = 12),
-      legend.position = c(0.85, 0.75),
-      legend.title = element_text(size = 9, margin = margin(b = 5)),
-      legend.text = element_text(size = 9),
-      legend.title.align = 0.5
-    )
+                 geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
+                 labs(x = "", y = "") +
+                 scale_fill_scico(palette = "vik",
+                                  name = paste("Partial effect", sub("^Model", "Model ", model_name)),
+                                  na.value = "white",
+                                  limits = effect_range) +
+                 geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                              color = "black", 
+                              size = 0.4) +
+                 coord_fixed() +
+                 theme_void() +
+                 theme(text = element_text(size = 12),
+                       legend.position = c(0.85, 0.75),
+                       legend.title = element_text(size = 9, margin = margin(b = 5)),
+                       legend.text = element_text(size = 9),
+                       legend.title.align = 0.5)
   
   model_label <- sub("^Model", "Model ", model_name)
 
   plot_se <- ggplot(data = grid) +
-    geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
-    labs(x = "", y = "") +
-    scale_fill_scico(
-    palette = "vik",
-    name = bquote(sigma[.(model_label)]),
-    na.value = "white",
-    limits = se_range) +
-    geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-                 color = "black", 
-                 size = 0.4) +
-    coord_fixed() +
-    theme_void() +
-    theme(
-      text = element_text(size = 12),
-      legend.position = c(0.85, 0.75),
-      legend.title = element_text(size = 9, margin = margin(b = 5)),
-      legend.text = element_text(size = 9),
-      legend.title.align = 0.5)
+             geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
+             labs(x = "", y = "") +
+             scale_fill_scico(
+             palette = "vik",
+             name = bquote(sigma[.(model_label)]),
+             na.value = "white",
+             limits = se_range) +
+             geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                          color = "black", 
+                          size = 0.4) +
+             coord_fixed() +
+             theme_void() +
+             theme(text = element_text(size = 12),
+                   legend.position = c(0.85, 0.75),
+                   legend.title = element_text(size = 9, margin = margin(b = 5)),
+                   legend.text = element_text(size = 9),
+                   legend.title.align = 0.5)
 
   list(effect = plot_effect, se = plot_se)
 }
@@ -482,25 +476,22 @@ base_grid2 <- base_grid
 base_grid2$se_across_models <- se_across_models  # <- bake it into the data
 
 plot_sd_across <- ggplot(data = base_grid2) +
-  geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
-  labs(x = "", y = "") +
-  scale_fill_scico(palette = "vik",
-                   name = expression(sigma[Ensemble]),
-                   na.value = "white",
-                   limits = se_limits) +
-  geom_contour(
-    aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
-    color = "black", size = 0.4
-  ) +
-  coord_fixed() +
-  theme_void() +
-  theme(
-    text = element_text(size = 12),
-    legend.position = c(0.85, 0.75),
-    legend.title = element_text(size = 9, margin = margin(b = 5)),
-    legend.text = element_text(size = 9),
-    legend.title.align = 0.5
-  )
+                  geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
+                  labs(x = "", y = "") +
+                  scale_fill_scico(palette = "vik",
+                                   name = expression(sigma[Ensemble]),
+                                   na.value = "white",
+                                   limits = se_limits) +
+                  geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                               color = "black", 
+                               size = 0.4) +
+                  coord_fixed() +
+                  theme_void() +
+                  theme(text = element_text(size = 12),
+                        legend.position = c(0.85, 0.75),
+                        legend.title = element_text(size = 9, margin = margin(b = 5)),
+                        legend.text = element_text(size = 9),
+                        legend.title.align = 0.5)
 
 plot_spatial_smooths <- c(plot_spatial_smooths, list(plot_sd_across))
 saveRDS(plot_spatial_smooths, "saved_files/plot_spatial_smooths.rds")
@@ -567,22 +558,22 @@ for (var in names(smooth_variables)) {
                                  color = .data[[by_var_name]],
                                  linetype = Model, 
                                  group = interaction(Model, .data[[by_var_name]]))) +
-        geom_ribbon(data = subset(combined_df, Model == "Model 1"),
-                    aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
-                    alpha = 0.5, 
-                    color = NA) +
-        geom_line(linewidth = 1) +
-        labs(title = plot_title,
-             x = smooth_variables[[var]],
-             y = "Partial effect") +
-        scale_color_brewer(palette = "Dark2", name = "Municipality type") +
-        scale_linetype_manual(values = c("solid", 
-                                         "dashed", 
-                                         "dotted", 
-                                         "dotdash", 
-                                         "twodash", 
-                                         "longdash")) +
-        guides(fill = guide_legend(override.aes = list(linetype = 0)))
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+                     aes(ymin = .estimate - 1.96*.se, ymax = .estimate + 1.96*.se),
+                     alpha = 0.5, 
+                     color = NA) +
+         geom_line(linewidth = 1) +
+         labs(title = plot_title,
+              x = smooth_variables[[var]],
+              y = "Partial effect") +
+         scale_color_brewer(palette = "Dark2", name = "Municipality type") +
+         scale_linetype_manual(values = c("solid", 
+                                          "dashed", 
+                                          "dotted", 
+                                          "dotdash", 
+                                          "twodash", 
+                                          "longdash")) +
+         guides(fill = guide_legend(override.aes = list(linetype = 0)))
 
   } else {
 
@@ -787,7 +778,7 @@ get_residuals <- function(models, dataset, fold_from_name = TRUE) {
       fold <- i
     }
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(sales_price = dataset$sales_price,
            sales_date_numeric = dataset$sales_date_numeric,
@@ -1590,7 +1581,7 @@ get_residuals_grid <- function(models, dataset, grid_df, grid_name) {
     row <- grid_df[i, ]
     fold <- row$fold
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(sales_price = dataset$sales_price,
            predicted_sales_price = predicted_sales_price,
@@ -1680,7 +1671,7 @@ get_residuals_fraction <- function(models, dataset, grid_df) {
     fold <- row$fold
     frac <- row$fraction
     
-    predicted_sales_price <- predict(model, newdata = dataset, type = "response")
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
     
     tibble(
       sales_price = dataset$sales_price,
@@ -1775,7 +1766,7 @@ if (load){
   time_model <- gam(sales_price ~ 
                     municipality_type + 
                     s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024),
-                    data = dataset_sales,
+                    data = other_sales,
                     family = tw(link=log),
                     method = "REML")
 
@@ -1784,19 +1775,22 @@ if (load){
 }
 
 
+#index double sales
 time_model_terms <- as.data.frame(predict.gam(time_model, double_sales, type = "terms"))
-time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", 
-                                     colnames(time_model_terms)), 
-                                     drop = FALSE]))
+time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", colnames(time_model_terms)), drop = FALSE]))
 
 double_sales <- double_sales %>% mutate(log_sales_price = log(sales_price),
-                                        log_sales_price_indexed = log_sales_price + time_adjustment,
+                                        log_sales_price_indexed = log_sales_price - time_adjustment,
                                         sales_price_indexed = exp(log_sales_price_indexed))
 
+#index other sales
+time_model_terms <- as.data.frame(predict.gam(time_model, other_sales, type = "terms"))
+time_adjustment <- as.vector(rowSums(time_model_terms[, grepl("sales_date_numeric", colnames(time_model_terms)), drop = FALSE]))
 other_sales <- other_sales %>% mutate(log_sales_price = log(sales_price),
-                                      log_sales_price_indexed = log_sales_price + time_adjustment,
+                                      log_sales_price_indexed = log_sales_price - time_adjustment,
                                       sales_price_indexed = exp(log_sales_price_indexed))
 
+#calculate lagged values
 double_sales_lagged <- double_sales %>%
                        arrange(id, sales_date) %>%
                        group_by(id) %>%
@@ -1804,7 +1798,6 @@ double_sales_lagged <- double_sales %>%
                               avg_price = (sales_price_indexed + lag(sales_price_indexed)) / 2,
                               sales_date_diff = sales_date_numeric - lag(sales_date_numeric)) %>%
                        ungroup()
-
 
 # 2. GAM model
 
@@ -1845,52 +1838,51 @@ if (load){
 }
 
 double_sales <- double_sales %>% 
-                mutate(residuals_gam = 
-                       log_sales_price_indexed - predict(gam_model, double_sales, type = "link"))
+                mutate(predictions_gam = predict.gam(gam_model, double_sales, type = "link"),
+                       residuals_gam =  log_sales_price_indexed - predictions_gam)
 
 other_sales <- other_sales %>% 
-               mutate(residuals_gam = 
-                      log_sales_price_indexed - predict(gam_model, other_sales, type = "link"))
-
+               mutate(predictions_gam = predict.gam(gam_model, other_sales, type = "link"),
+                      residuals_gam =  log_sales_price_indexed - predictions_gam)
 
 # 3. XGboost Models (fitted to log sales prices and GAM residuals)
 
-dummy_model <- dummyVars(~ roof_type +
-                           wall_type +
-                           heating_type +
-                           house_type +
-                           municipality_type + 
-                           municipality +
-                           province +
-                           region,
-                         data = other_sales)
+dummy_model_other <- dummyVars(~ roof_type +
+                                 wall_type +
+                                 heating_type +
+                                 house_type +
+                                 municipality_type + 
+                                 municipality +
+                                 province +
+                                 region,
+                               data = other_sales)
 
-categorical_encoded <- predict(dummy_model, newdata = other_sales)
+categorical_encoded_other <- predict(dummy_model_other, newdata = other_sales)
 
-X <- other_sales %>%
-     select(coordinate_east,
-            coordinate_north,
-            number_of_bathrooms,
-            number_of_rooms,
-            number_of_floors,
-            year_built,
-            year_rebuilt,
-            living_space,
-            lot_size,
-            coast_distance,
-            lake_distance,
-            stream_distance,
-            road_distance,
-            highway_distance,
-            train_station_distance,
-            railway_distance,
-            windturbine_distance,
-            forest_size,
-            ocean_view,
-            lake_view) %>%
-      as.matrix()
+X_other <- other_sales %>%
+           select(coordinate_east,
+                  coordinate_north,
+                  number_of_bathrooms,
+                  number_of_rooms,
+                  number_of_floors,
+                  year_built,
+                  year_rebuilt,
+                  living_space,
+                  lot_size,
+                  coast_distance,
+                  lake_distance,
+                  stream_distance,
+                  road_distance,
+                  highway_distance,
+                  train_station_distance,
+                  railway_distance,
+                  windturbine_distance,
+                  forest_size,
+                  ocean_view,
+                  lake_view) %>%
+            as.matrix()
 
-X_full <- cbind(X, categorical_encoded)
+X_full_other <- cbind(X_other, categorical_encoded_other)
 
 if (load){
 
@@ -1900,7 +1892,7 @@ if (load){
 } else{
 
   #on log sales price
-  dtrain <- xgb.DMatrix(data = X_full, label = other_sales$log_sales_price_indexed)
+  dtrain <- xgb.DMatrix(data = X_full_other, label = other_sales$log_sales_price_indexed)
 
   xgb_model <- xgboost(
     data = dtrain,
@@ -1916,7 +1908,7 @@ if (load){
   saveRDS(xgb_model, "saved_files/xgb_model.rds")
   
   #on log residuals
-  dtrain <- xgb.DMatrix(data = X_full, label = other_sales$residuals_gam)
+  dtrain <- xgb.DMatrix(data = X_full_other, label = other_sales$residuals_gam)
 
   xgb_model_residuals <- xgboost(
     data = dtrain,
@@ -1933,36 +1925,47 @@ if (load){
 
 }
 
-categorical_encoded <- predict(dummy_model, newdata = double_sales)
 
-X <- double_sales %>%
-     select(coordinate_east,
-            coordinate_north,
-            number_of_bathrooms,
-            number_of_rooms,
-            number_of_floors,
-            year_built,
-            year_rebuilt,
-            living_space,
-            lot_size,
-            coast_distance,
-            lake_distance,
-            stream_distance,
-            road_distance,
-            highway_distance,
-            train_station_distance,
-            railway_distance,
-            windturbine_distance,
-            forest_size,
-            ocean_view,
-            lake_view) %>%
-      as.matrix()
+categorical_encoded_double <- predict(dummy_model_other, newdata = double_sales)
 
-X_full <- cbind(X, categorical_encoded)
+X_double <- double_sales %>%
+            select(coordinate_east,
+                   coordinate_north,
+                   number_of_bathrooms,
+                   number_of_rooms,
+                   number_of_floors,
+                   year_built,
+                   year_rebuilt,
+                   living_space,
+                   lot_size,
+                   coast_distance,
+                   lake_distance,
+                   stream_distance,
+                   road_distance,
+                   highway_distance,
+                   train_station_distance,
+                   railway_distance,
+                   windturbine_distance,
+                   forest_size,
+                   ocean_view,
+                   lake_view) %>%
+            as.matrix()
+
+X_full_double <- cbind(X_double, categorical_encoded_double)
+
+missing_cols <- setdiff(colnames(X_full_other), colnames(X_full_double))
+
+if (length(missing_cols) > 0) {
+  
+  X_full_double <- cbind(X_full_double,
+                         matrix(0, nrow = nrow(X_full_double), ncol = length(missing_cols), dimnames = list(NULL, missing_cols)))
+}
+
+X_full_double <- X_full_double[, colnames(X_full_other), drop = FALSE]
 
 double_sales <- double_sales %>% 
-                mutate(residuals_xgb = log_sales_price_indexed - predict(xgb_model, X_full),
-                       residuals_hybrid = residuals_gam - predict(xgb_model_residuals, X_full))
+                mutate(residuals_xgb = log_sales_price_indexed - predict(xgb_model, X_full_double),
+                       residuals_hybrid = residuals_gam - predict(xgb_model_residuals, X_full_double))
 
 
 # 4. Noise model
@@ -2009,7 +2012,7 @@ plot_market_noise <- ggplot(data = double_sales_lagged,
                           color = "Model",
                           linetype = NULL) +
                      ylim(-1, 1) +
-                     xlim(0, 10) +
+                     xlim(0, 15) +
                      theme_minimal() +
                      theme(text = element_text(size = 12),
                            legend.position = c(0.95, 0.65),
@@ -2033,7 +2036,7 @@ if (load) {
   data_folds <- readRDS("saved_files/data_folds.rds")
 } else {
 
-  N_values <- c(2,3,4,6,8,10,20,50)
+  N_values <- c(2,3,4,8)
 
   data_folds <- lapply(N_values, function(N_current) {assign_cv_folds(dataset_sales, N = N_current, seed = 123)})
   
