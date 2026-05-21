@@ -1493,130 +1493,163 @@ wrap_plots(flatten(plot_value_densities), ncol = 4)
 
 #### 11. Model stability
 
-```{r Stability, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Stability, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+dataset_properties <- dataset_properties[1:10000,]
 
-cap <- 0.1
+
+# -------------------------
+# 1. Helper: extract model specification
+# -------------------------
+
+extract_model_specification <- function(model_name) {
+  
+  model_name %>% 
+  str_remove("^model_[0-9]+_") %>%
+  str_remove("_?standard_property_value_Model[1-4]?") %>%
+  str_replace_all("__+", "_") %>%
+  str_remove("_$")
+}
+
+# -------------------------
+# 2. Group models by specification
+# -------------------------
+
+models_by_specification <- imap(
+  
+  models,
+  
+  function(model_set, model_name) {
+    
+    model_specification <- extract_model_specification(model_name)
+    
+    imap(model_set, function(model, fold_name) {
+      
+      list(
+        model = model,
+        model_name = model_name,
+        fold_name = fold_name,
+        model_specification = model_specification
+      )
+    })
+  }
+) %>%
+flatten() %>%
+split(map_chr(., "model_specification"))
+
+# -------------------------
+# 3. Spread function
+# -------------------------
 
 spread_model_set <- function(model_set, dataset) {
   
-  predictions <- imap(model_set, function(model, name) {
-    preds <- predict.gam(model, newdata = dataset, type = "link", se.fit = TRUE)
-
-    tibble(
-      !!paste0("pred_", name) := as.vector(preds$fit),
-      !!paste0("sigma_", name) := as.vector(preds$se.fit)
+  predictions <- imap(model_set, function(model_info, i) {
+    
+    preds <- predict.gam(model_info$model,
+                         newdata = dataset,
+                         type = "link")
+    
+    tibble(!!paste0(
+        "pred_",
+        model_info$model_name,
+        "_",
+        model_info$fold_name
+      ) := as.vector(preds)
     )
   })
-
+  
   pred_matrix <- bind_cols(predictions)
-
-  dataset_out <- bind_cols(dataset, pred_matrix)
-
-  pred_cols <- grep("^pred_", names(dataset_out), value = TRUE)
-  sigma_cols <- grep("^sigma_", names(dataset_out), value = TRUE)
-
-  dataset_out %>% rowwise() %>%
-                  mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols))),
-                  mean_prediction = mean(c_across(all_of(pred_cols))),
-                  mean_sigma_model = mean(c_across(all_of(sigma_cols)))) %>%
-                  ungroup()
+  pred_mat <- as.matrix(pred_matrix)
+  
+  bind_cols(dataset, pred_matrix) %>%
+  mutate(mean_Ensemble = rowMeans(pred_mat, na.rm = TRUE),
+         sigma_Ensemble = apply(pred_mat, 1, sd, na.rm = TRUE))
 }
 
+# -------------------------
+# 4. Predict for each specification
+# -------------------------
 
-dataset_spread <- lapply(names(models), function(model_label) {
-  message("Predicting for ", model_label, " ...")
-  spread_model_set(models[[model_label]], dataset_properties)
-})
-
-names(dataset_spread) <- names(models)
-
-saveRDS(dataset_spread, "saved_files_lot_sales/dataset_spread.rds")
-
-### Histograms 
-
-spread_long <- bind_rows(
-  lapply(names(dataset_spread), function(model_label) {
-    dataset_spread[[model_label]] %>%
-      transmute(
-        Model = model_label,
-        sigma_Ensemble = sigma_Ensemble,
-        sigma_Model1 = sigma_Model1
-      )
-  })
+dataset_spread <- lapply(
+  names(models_by_specification),
+  
+  function(model_specification) {
+    
+    message("Predicting for ", model_specification, " ...")
+    
+    spread_model_set(model_set = models_by_specification[[model_specification]],
+                     dataset = dataset_properties)
+  }
 )
 
-plot_ensemble <- ggplot(spread_long,
-                        aes(x = sigma_Ensemble, color = Model, fill = Model)) +
-                 geom_density(alpha = 0.15, linewidth = 0.8) +
-                              labs(x = "Ensemble spread (link scale)",
-                                   y = "Density") +
-                 xlim(0, cap) +
-                 theme_minimal()
-
-plot_model1 <- ggplot(spread_long,
-                      aes(x = sigma_Model1, color = Model, fill = Model)) +
-               geom_density(alpha = 0.15, linewidth = 0.8) +
-                            labs(x = "GAM uncertainty from Model1 (link scale)",
-                                 y = "Density") +
-               xlim(0, cap) +
-               theme_minimal()
+names(dataset_spread) <- names(models_by_specification)
 
 
-plot_ensemble
-plot_model1
+cap <- 0.2
 
+# -------------------------
+# 5. Density data
+# -------------------------
 
-### Geographic plots
-
-plot <- ggplot() +
-        geom_contour(data = coordinate_grid,
-                     aes(x = coordinate_east,
-                         y = coordinate_north,
-                         z = as.numeric(!ocean)),
-                         color = "black",
-                         size = 0.1) +
-        coord_fixed() +
-        theme_void(base_size = 10)
-
-
-plot_pairs <- imap(dataset_spread, function(df, model_name) {
+spread_long <- imap_dfr(dataset_spread, function(df, model_specification) {
   
-  # GAM uncertainty plot
-  plot_gam <- plot +
-              geom_point(data = df,
-                         aes(x = coordinate_east,
-                             y = coordinate_north,
-                             color = sigma_Model1),
-                         size = 0.2) +
-              scale_color_viridis_c(option = "plasma",
-                                    name = "GAM uncertainty",
-                                    limits = c(0, cap),
-                                    oob = squish) +
-              labs(title = paste(model_name, "- GAM uncertainty")) +
-              theme(legend.position = c(0.7, 0.75),
-                    legend.box = "horizontal")
+  df %>% transmute(model_specification = model_specification,
+                   sigma_Ensemble = sigma_Ensemble)
   
-  # Ensemble uncertainty plot
-  plot_ensemble <- plot +
-                   geom_point(data = df,
-                              aes(x = coordinate_east,
-                                  y = coordinate_north,
-                                  color = sigma_Ensemble),
-                              size = 0.2) +
-                   scale_color_viridis_c(option = "plasma",
-                                         name = "Ensemble uncertainty",
-                                         limits = c(0, cap),
-                                         oob = squish) +
-                   labs(title = paste(model_name, "- Ensemble uncertainty")) +
-                   theme(legend.position = c(0.7, 0.75),
-                         legend.box = "horizontal")
-  
-  list(gam_uncertainty = plot_gam, ensemble_uncertainty = plot_ensemble)
+})
 
+# -------------------------
+# 6. Density plot
+# -------------------------
+
+plot_ensemble_density <- ggplot(spread_long,
+                         aes(x = sigma_Ensemble,
+                             color = model_specification,
+                             fill = model_specification)) +
+                         geom_density(alpha = 0.15, linewidth = 0.8, na.rm = TRUE) +
+                         coord_cartesian(xlim = c(0, cap)) +
+                         labs(x = "Ensemble spread (link scale)",
+                              y = "Density",
+                              color = NULL,
+                              fill = NULL) +
+                         theme_minimal()
+
+plot_ensemble_density
+
+# -------------------------
+# 7. Base map
+# -------------------------
+
+base_map <- ggplot() +
+            geom_contour(data = coordinate_grid,
+            aes(x = coordinate_east,
+                y = coordinate_north,
+                z = as.numeric(!ocean)),
+            color = "black",
+            linewidth = 0.1) +
+            coord_fixed() +
+            theme_void(base_size = 10)
+
+# -------------------------
+# 8. One geographic plot per model specification
+# -------------------------
+
+plot_ensemble_geographic <- imap(dataset_spread, function(df, model_specification) {
+  
+  base_map + geom_point(data = df,
+                        aes(x = coordinate_east,
+                            y = coordinate_north,
+                            color = sigma_Ensemble),
+                        size = 0.2) +
+             scale_color_viridis_c(option = "plasma",
+                                   name = "Ensemble uncertainty",
+                                   limits = c(0, cap),
+                                   oob = squish) +
+             labs(title = paste(model_specification, "- Ensemble uncertainty")) +
+             theme(legend.position = c(0.7, 0.75),
+                   legend.box = "horizontal")
 })
 
 
-wrap_plots(flatten(plot_pairs), ncol = 4)
 ```
 
 
