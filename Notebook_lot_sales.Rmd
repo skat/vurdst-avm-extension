@@ -1205,7 +1205,7 @@ plot_spatial_smooths <- imap(spatial_grids, function(model_set, model_name) {
 saveRDS(plot_spatial_smooths, "saved_files_lot_sales/plot_spatial_smooths.rds")
 
 #example plots
-wrap_plots(plot_spatial_smooths$model_25_standard_property_value_Model1_none_coords, ncol = 4)
+wrap_plots(plot_spatial_smooths$model_13_standard_property_value_Model1_none_coords, ncol = 4)
 ```
 
 
