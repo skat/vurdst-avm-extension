@@ -215,3 +215,74 @@ performance_exact <- summarise_performance_from_residuals(residual_df, group_var
 performance_by_specification <- performance_exact %>%
                                 group_by(model_specification) %>%
                                 summarise(across(c(MALE, MAPE, MAE, PM20, COD, PRD), ~ mean(.x, na.rm = TRUE)), .groups = "drop")
+
+
+
+# 6. Andre modeller
+models <- readRDS("~/vurdst-avm-extension/saved_files_lot_sales/models_combined.rds")
+
+standardize_property <- function(data, reference_data) {
+
+  data %>% mutate(year_built = 1970,
+                  year_rebuilt = 1970,
+                  living_space = 140,
+                  maximum_coverage_percentage = 30,
+                  unused_floor_area = 0,
+                  number_of_divisions = 1,
+                  number_of_bathrooms = 1,
+                  house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
+                  roof_type = factor("Fiber cement", levels = levels(factor(reference_data$roof_type))),
+                  wall_type = factor("Brick", levels = levels(factor(reference_data$wall_type))),
+                  heating_type = factor("District heating", levels = levels(factor(reference_data$heating_type))))
+}
+
+dataset_lot_sales <- standardize_property(dataset_lot_sales, dataset)
+dataset_lot_sales$type <- factor("Lot sale", levels = c("Property sale", "Lot sale"))
+
+
+get_residuals <- function(models, dataset, fold_from_name = TRUE) {
+
+  residual_list <- lapply(seq_along(models), function(i) {
+
+    model_name <- names(models)[i]
+    model <- models[[i]]
+
+    if (fold_from_name) {
+      fold <- as.integer(sub("^Model(\\d+).*$", "\\1", model_name))
+    } else {
+      fold <- i
+    }
+
+    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
+
+    tibble(sales_price = dataset$sales_price,
+           sales_date_numeric = dataset$sales_date_numeric,
+           predicted_sales_price = predicted_sales_price,
+           residual_sales_price = predicted_sales_price - dataset$sales_price,
+           residual_sales_price_percent = (predicted_sales_price - dataset$sales_price) / dataset$sales_price * 100,
+           residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
+           ratio = predicted_sales_price / dataset$sales_price,
+           id = dataset$id,
+           type = dataset$type,
+           municipality_type = dataset$municipality_type,
+           Model = model_name)
+
+  })
+
+  bind_rows(residual_list)
+}
+
+residual_df <- get_residuals(models, dataset_lot_sales)
+saveRDS(residual_df, "~/vurdst-avm-extension/saved_files_lot_sales/residual_df_combined_gamle_grundsalg.rds")
+
+performance_countrywide <- residual_df %>%
+                           group_by(type) %>%
+                           summarise(municipality_type = "Countrywide",
+                                     MALE = mean(abs(residual_sales_price_log)),
+                                     MAPE = mean(abs(residual_sales_price_percent)),
+                                     MAE = mean(abs(residual_sales_price)),
+                                     PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
+                                     COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
+                                     PRD = mean(ratio) / (sum(predicted_sales_price) / sum(sales_price)),
+                                     .groups = "drop")
+
