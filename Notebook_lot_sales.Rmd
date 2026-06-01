@@ -624,7 +624,6 @@ if (load) {
 
 ```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
-
 # -------------------------
 # 1. Model fitting functions
 # -------------------------
@@ -676,8 +675,6 @@ make_standardized_formula <- function(std_var, extra_terms = NULL, coord_term = 
 standard_vars <- paste0("standard_property_value_Model", seq_len(N))
 
 base_terms <- list(
-  
-  none = NULL,
   
   lot_size_coverage_divisions= c("s(lot_size, k = 6, pc = 800)", "s(maximum_coverage_percentage, k = 3, pc = 30)", "s(number_of_divisions, k = 3, pc = 1)"),
   
@@ -1494,7 +1491,7 @@ saveRDS(plot_value_densities, "saved_files_lot_sales/plot_value_densities.rds")
 #### 11. Model stability
 
 ```{r Stability, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
-dataset_properties <- dataset_properties[1:100,]
+dataset_properties <- dataset_properties[1:1000,]
 
 
 # -------------------------
@@ -1660,35 +1657,16 @@ saveRDS(plot_ensemble_geographic, "saved_files_lot_sales/plot_ensemble_geographi
 #### 11. Combined property and lot model 
 
 ```{r Combined model, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
-load <- FALSE
-
-
-#add_none_reference <- function(x, none_label = "None") {
-  
-#  factor(x) %>%
-#  fct_expand(none_label) %>%
-#  fct_relevel(none_label)
-
-#}
-
-#apply_none_reference <- function(data) {
-  
-#  data %>% mutate(house_type = add_none_reference(house_type),
-#                  roof_type = add_none_reference(roof_type),
-#                  wall_type = add_none_reference(wall_type),
-#                  heating_type = add_none_reference(heating_type))
-#  
-#}
 
 assign_lot_values <- function(data, reference_data) {
   
   data %>% mutate(year_built = 1970,
                   year_rebuilt = 1970,
-                  living_space = 0,
+                  living_space = 140,
                   maximum_coverage_percentage = 30,
                   unused_floor_area = 0,
                   number_of_divisions = 1,
-                  number_of_bathrooms = 0,
+                  number_of_bathrooms = 1,
                   house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
                   roof_type = factor("Fiber cement", levels = levels(factor(reference_data$roof_type))),
                   wall_type = factor("Brick", levels = levels(factor(reference_data$wall_type))),
@@ -1696,27 +1674,11 @@ assign_lot_values <- function(data, reference_data) {
   
 }
 
-#dataset_property_sales <- apply_none_reference(dataset_property_sales)
-
 dataset_lot_sales <- assign_lot_values(dataset_lot_sales, dataset_property_sales)
 
 dataset_sales <- bind_rows(dataset_lot_sales, dataset_property_sales)
-dataset_sales$type <- factor(dataset_sales$type, levels = c("Lot sale", "Property sale"))
+dataset_sales$type = ordered(dataset_sales$type, levels = c("Lot sale", "Property sale"))
 
-property_lot_ratio <- dataset_sales %>%
-                      group_by(municipality_type, type) %>%
-                      summarise(mean_price = mean(sales_price, na.rm = TRUE),
-                                median_price = median(sales_price, na.rm = TRUE),
-                                .groups = "drop") %>%
-                      pivot_wider(names_from = type,
-                                  values_from = c(mean_price, median_price),
-                                  names_sep = "_") %>%
-                      rename_with(~ gsub(" ", "_", .x)) %>%
-                      mutate(mean_ratio = mean_price_Property_sale / mean_price_Lot_sale,
-                             median_ratio = median_price_Property_sale / median_price_Lot_sale)
-
-
-dataset_sales <- dataset_sales %>% mutate(building_offset = if_else(type == "Property sale", log(2.7), 0))
 
 #assign folds
 assign_cv_folds <- function(data, N, seed = 123) {
@@ -1748,10 +1710,11 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
   
   model <- bam(sales_price ~ 
                s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+               s(coordinate_east, coordinate_north, k = k_spatial, by = type, pc = c(697000, 6150000)) +
                s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
                s(year_built, k = k_other, by = municipality_type, pc = 1970) +
                s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
-               s(living_space, k = k_other, by = municipality_type, pc = 0) +
+               s(living_space, k = k_other, by = municipality_type, pc = 140) +
                s(lot_size, k = k_other, by = municipality_type, pc = 800) +
                s(coast_distance, k = k_other, pc = 1500) +
                s(lake_distance, k = k_other, pc = 500) +
@@ -1764,12 +1727,11 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
                s(ocean_view, k = k_other, pc = 0) +
                s(lake_view, k = k_other, pc = 0) +
                s(forest_size, k = k_other, pc = 0) +
-               s(number_of_bathrooms, k = 2, pc = 0) +
+               s(number_of_bathrooms, k = 2, pc = 1) +
                house_type * municipality_type +
                roof_type * municipality_type +
                wall_type * municipality_type +
-               heating_type * municipality_type + 
-               type * municipality_type,
+               heating_type * municipality_type,               
                data = training_subset,
                chunk.size = nrow(training_subset),
                family = tw(link = log),
@@ -2243,264 +2205,6 @@ get_residuals <- function(models, dataset, fold_from_name = TRUE) {
 
 residual_df <- get_residuals(models, dataset_sales_cv)
 saveRDS(residual_df, "saved_files_lot_sales//residual_df_combined.rds")
-
-performance_countrywide <- residual_df %>%
-                           mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
-                           group_by(dataset_type, type) %>%
-                           summarise(municipality_type = "Countrywide",
-                                     MALE = mean(abs(residual_sales_price_log)),
-                                     MAPE = mean(abs(residual_sales_price_percent)),
-                                     MAE = mean(abs(residual_sales_price)),
-                                     PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
-                                     COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
-                                     PRD = mean(ratio) / (sum(predicted_sales_price) / sum(sales_price)),
-                                     .groups = "drop")
-
-performance_municipality_type <- residual_df %>%
-                                 mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
-                                 group_by(dataset_type, municipality_type) %>%
-                                 summarise(MALE = mean(abs(residual_sales_price_log)),
-                                           MAPE = mean(abs(residual_sales_price_percent)),
-                                           MAE = mean(abs(residual_sales_price)),
-                                           PM20 = mean(abs(residual_sales_price_percent) <= 20) * 100,
-                                           COD = mean(abs(ratio - median(ratio))) / median(ratio) * 100,
-                                           .groups = "drop")
-
-performance <- bind_rows(performance_countrywide, performance_municipality_type)
-
-municipality_levels <- c("Countrywide", sort(setdiff(unique(performance$municipality_type), "Countrywide")))
-
-performance_sorted <- performance %>%
-                      mutate(dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
-                             municipality_type = factor(municipality_type, levels = municipality_levels),
-                             MAE = round(MAE,0),
-                             PRD = ifelse(is.na(PRD), "", round(PRD, 2))) %>%
-                      arrange(municipality_type, dataset_type)  %>% 
-                      rename(Type = dataset_type,
-                             `Municipality type` = municipality_type,
-                             `MAPE [%]` = MAPE,
-                             `MAE [DKK]` = MAE,
-                             `PM20 [%]` = PM20,
-                             `COD [%]` = COD)
-
-#standard table
-#knitr::kable(performance_sorted, digits = 2, caption = "Model Performance by Municipality Type")
-
-#nicer table
-kable(performance_sorted %>% 
-select(-`Municipality type`), 
-       digits = 2, 
-       caption = "Model Performance by Municipality Type", 
-       booktabs = TRUE) %>%
-kable_styling(full_width = FALSE, position = "center") %>%
-group_rows("Countrywide", 1, 2) %>%
-group_rows("Capital", 3, 4) %>%
-group_rows("Commuter", 5, 6) %>%
-group_rows("Large city", 7, 8) %>%
-group_rows("Provincial", 9, 10) %>%
-group_rows("Rural", 11, 12)
-
-tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
-                   format = "latex", booktabs = TRUE, digits = 2,
-                   caption = "Model performance by municipality type.",
-                   label = "perf_by_muni") %>%
-             kable_styling(full_width = FALSE, 
-                           position = "center", 
-                           latex_options = c("hold_position")) %>%
-             group_rows("Countrywide", 1, 2) %>%
-             group_rows("Capital", 3, 4) %>%
-             group_rows("Commuter", 5, 6) %>%
-             group_rows("Large city", 7, 8) %>%
-             group_rows("Provincial", 9, 10) %>%
-             group_rows("Rural", 11, 12)
-
-
-```
-
-
-
-
-#### 12. Combined property and lot model augmented 
-
-```{r Combined model augmented, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
-
-standard_building_value <- 1e+6
-
-
-#Create combined sales set with standardized properties on lot sales
-
-standardize_property <- function(data, reference_data) {
-  
-    data %>% mutate(year_built = 1970,
-                    year_rebuilt = 1970,
-                    living_space = 140,
-                    maximum_coverage_percentage = 30,
-                    unused_floor_area = 0,
-                    number_of_divisions = 1,
-                    number_of_bathrooms = 1,
-                    house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
-                    roof_type = factor("Fiber cement", levels = levels(factor(reference_data$roof_type))),
-                    wall_type = factor("Brick", levels = levels(factor(reference_data$wall_type))),
-                    heating_type = factor("District heating", levels = levels(factor(reference_data$heating_type))))
-  }
-
-dataset_lot_sales <- standardize_property(dataset_lot_sales, dataset)
-
-standard_building_value <- 1e6
-
-dataset_lot_sales <- dataset_lot_sales %>%
-                     mutate(sales_price_observed = sales_price,
-                            standard_building_value_added = standard_building_value,
-                            sales_price = sales_price + standard_building_value_added)
-
-dataset_property_sales <- dataset_property_sales %>%
-                          mutate(sales_price_observed = sales_price,
-                                 standard_building_value_added = 0)
-
-dataset_sales <- bind_rows(dataset_property_sales, dataset_lot_sales)
-dataset_sales$type <- factor(dataset_sales$type, levels = c("Property sale", "Lot sale"))
-
-#assign folds
-assign_cv_folds <- function(data, N, seed = 123) {
-  set.seed(seed)
-  data %>% mutate(validation_set = sample(rep(1:N, length.out = n())),
-                  .rand = runif(n()))
-}
-
-dataset_sales_cv <- assign_cv_folds(dataset_sales, N = N, seed = 123)
-
-table(dataset_sales_cv$validation_set, useNA = "ifany")
-
-
-#fit models
-fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
-                     checkpoint_prefix = "Model", save_checkpoint = TRUE,
-                     seed = 123) {
-  
-  training_subset <- data %>% filter(validation_set != i)
-
-  if (fraction < 1.0) {
-    
-    training_subset <- training_subset %>%
-                       group_by(municipality_type) %>%
-                       arrange(.rand, .by_group = TRUE) %>%
-                       slice_head(prop = fraction) %>%
-                       ungroup() 
-  }
-  
-  model <- bam(sales_price ~ 
-               s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
-               s(year_built, k = k_other, by = municipality_type, pc = 1970) +
-               s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
-               s(living_space, k = k_other, by = municipality_type, pc = 140) +
-               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-               s(coast_distance, k = k_other, pc = 1500) +
-               s(lake_distance, k = k_other, pc = 500) +
-               s(stream_distance, k = k_other, pc = 1000) +
-               s(road_distance, k = k_other, pc = 2000) +
-               s(highway_distance, k = k_other, pc = 2000) +
-               s(train_station_distance, k = k_other, pc = 2000) +
-               s(railway_distance, k = k_other, pc = 1000) +
-               s(windturbine_distance, k = k_other, pc = 3000) +
-               s(ocean_view, k = k_other, pc = 0) +
-               s(lake_view, k = k_other, pc = 0) +
-               s(forest_size, k = k_other, pc = 0) +
-               s(number_of_bathrooms, by = municipality_type, k = 2, pc = 1) +
-               house_type * municipality_type +
-               roof_type * municipality_type +
-               wall_type * municipality_type +
-               heating_type * municipality_type,
-               data = training_subset,
-               chunk.size = nrow(training_subset),
-               family = tw(link = log),
-               method = "fREML")
-  
-  if (save_checkpoint) {
-    filename <- sprintf("%s_fold%d_k%d_frac%.2f.rds", checkpoint_prefix, i, k_spatial, fraction)
-    saveRDS(model, file = file.path("checkpoints_lot_sales", filename))
-  }
-  
-  model
-}
-
-fit_model_ensemble <- function(data, N, k_spatial, k_other = 10, fraction = 1.0, checkpoint_prefix = "Model") {
-  
-  models <- future_lapply(1:N, function(i) {
-    fit_fold(
-      i = i,
-      data = data,
-      k_spatial = k_spatial,
-      k_other = k_other,
-      fraction = fraction,
-      checkpoint_prefix = checkpoint_prefix
-    )
-  })
-  names(models) <- paste0("Model", 1:N)
-  models
-}
-
-if (load) {
-  models <- readRDS("saved_files_lot_sales/models_combined_augmented.rds")
-} else {
-  models <- fit_model_ensemble(
-    data = dataset_sales_cv,
-    N = N,
-    k_spatial = k_spatial,
-    k_other = k_other,
-    fraction = 1.0,
-    checkpoint_prefix = "main"
-  )
-  saveRDS(models, "saved_files_lot_sales/models_combined_augmented.rds")
-}
-
-```
-
-
-
-```{r Model performance 2, eval=TRUE, echo=TRUE, warning=FALSE}
-
-get_residuals <- function(models, dataset, fold_from_name = TRUE) {
-  
-  residual_list <- future_lapply(seq_along(models), function(i) {
-    
-    model_name <- names(models)[i]
-    model <- models[[i]]
-    
-    fold <- if (fold_from_name) {
-      as.integer(sub("^Model(\\d+).*$", "\\1", model_name))
-    } else {
-      i
-    }
-    
-    predicted_model_price <- as.vector(
-      predict.gam(model, newdata = dataset, type = "response")
-    )
-    
-    predicted_observed_price <- predicted_model_price - dataset$standard_building_value_added
-    
-    observed_price <- dataset$sales_price_observed
-    
-    tibble(sales_price = observed_price,
-           sales_price_model = dataset$sales_price,
-           predicted_sales_price = predicted_observed_price,
-           predicted_model_price = predicted_model_price,
-           residual_sales_price = predicted_observed_price - observed_price,
-           residual_sales_price_percent = (predicted_observed_price - observed_price) / observed_price * 100,
-           residual_sales_price_log = log(predicted_observed_price) - log(observed_price),
-           ratio = predicted_observed_price / observed_price,
-           validation = dataset$validation_set == fold,
-           id = dataset$id,
-           type = dataset$type,
-           municipality_type = dataset$municipality_type,
-           Model = model_name)
-  })
-  
-  bind_rows(residual_list)
-}
-
-residual_df <- get_residuals(models, dataset_sales_cv)
-saveRDS(residual_df, "saved_files_lot_sales//residual_df_combined_augmented.rds")
 
 performance_countrywide <- residual_df %>%
                            mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
