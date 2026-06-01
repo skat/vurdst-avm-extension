@@ -1909,6 +1909,144 @@ plot_sd_across <- ggplot(data = base_grid2) +
                         legend.title.align = 0.5)
 
 plot_spatial_smooths <- c(plot_spatial_smooths, list(plot_sd_across))
+saveRDS(plot_spatial_smooths, "saved_files_lot_sales/plot_spatial_smooths_combined1.rds")
+wrap_plots(plot_spatial_smooths, ncol = 3)
+
+```
+
+
+```{r Spatial smooth 2, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+# 1a) Predict once per model and store results
+prediction_results <- future_lapply(seq_along(models), function(i) {
+  model <- models[[i]]
+  model_data <- model.frame(model)
+  grid <- coordinate_grid
+  grid$type <- factor("Property sale", levels = levels(model_data$type))
+
+  for (var in setdiff(all.vars(formula(model)), names(grid))) {
+    x <- model_data[[var]]
+    if (is.factor(x)) {
+      grid[[var]] <- factor(rep(levels(x)[1], nrow(grid)), levels = levels(x))
+    } else {
+      grid[[var]] <- 0
+    }
+  }
+
+  terms <- predict.gam(model, grid, type = "terms", se.fit = TRUE)
+  df_predictions <- as.data.frame(terms$fit)
+  df_se <- as.data.frame(terms$se.fit)
+
+  effect <- df_predictions$`s(coordinate_east,coordinate_north):typeProperty sale`
+  se <- df_se$`s(coordinate_east,coordinate_north):typeProperty sale`
+  effect[grid$ocean] <- NA
+  se[grid$ocean] <- NA
+
+  grid$effect_coordinates <- effect
+  grid$se_coordinates <- se
+
+  list(model_name = names(models)[i],
+       grid = grid)
+})
+
+
+# 1b) Compute SD across models (per grid cell) ---
+effects_mat <- do.call(cbind, lapply(prediction_results, function(x) x$grid$effect_coordinates))
+base_grid   <- prediction_results[[1]]$grid
+
+se_across_models <- apply(effects_mat, 1, sd, na.rm = TRUE)
+se_across_models[base_grid$ocean] <- NA
+
+# 2. Global ranges (normalized across everything) ---
+# Effects: symmetric across *all model* effects
+all_effects <- unlist(lapply(prediction_results, function(x) x$grid$effect_coordinates))
+max_abs_effect <- max(abs(all_effects), na.rm = TRUE)
+effect_limits  <- c(-max_abs_effect, max_abs_effect)
+
+# SEs: include per-model SEs AND the across-models SD
+all_ses_models <- unlist(lapply(prediction_results, function(x) x$grid$se_coordinates))
+se_limits <- c(0, max(c(all_ses_models, se_across_models), na.rm = TRUE))  # SEs are >= 0
+
+# 3. Plotting function (adds land/ocean outline) ---
+plot_model_terms_from_grid <- function(grid, model_name, effect_range, se_range) {
+
+  plot_effect <- ggplot(data = grid) +
+                 geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
+                 labs(x = "", y = "") +
+                 scale_fill_scico(palette = "vik",
+                                  name = paste("Partial effect", sub("^Model", "Model ", model_name)),
+                                  na.value = "white",
+                                  limits = effect_range) +
+                 geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                              color = "black", 
+                              size = 0.4) +
+                 coord_fixed() +
+                 theme_void() +
+                 theme(text = element_text(size = 12),
+                       legend.position = c(0.85, 0.75),
+                       legend.title = element_text(size = 9, margin = margin(b = 5)),
+                       legend.text = element_text(size = 9),
+                       legend.title.align = 0.5)
+  
+  model_label <- sub("^Model", "Model ", model_name)
+
+  plot_se <- ggplot(data = grid) +
+             geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
+             labs(x = "", y = "") +
+             scale_fill_scico(
+             palette = "vik",
+             name = bquote(sigma[.(model_label)]),
+             na.value = "white",
+             limits = se_range) +
+             geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                          color = "black", 
+                          size = 0.4) +
+             coord_fixed() +
+             theme_void() +
+             theme(text = element_text(size = 12),
+                   legend.position = c(0.85, 0.75),
+                   legend.title = element_text(size = 9, margin = margin(b = 5)),
+                   legend.text = element_text(size = 9),
+                   legend.title.align = 0.5)
+
+  list(effect = plot_effect, se = plot_se)
+}
+
+# 4. Build plots for each model (effect + SE) ---
+plot_lists <- lapply(prediction_results, function(result) {
+  plot_model_terms_from_grid(
+    result$grid, result$model_name,
+    effect_range = effect_limits,
+    se_range     = se_limits
+  )
+})
+
+plot_spatial_smooths <- unlist(plot_lists, recursive = FALSE)
+
+# 5. ONE extra plot: SD of effects across models (uses same se_limits) ---
+base_grid2 <- base_grid
+base_grid2$se_across_models <- se_across_models  # <- bake it into the data
+
+plot_sd_across <- ggplot(data = base_grid2) +
+                  geom_tile(aes(coordinate_east, coordinate_north, fill = se_across_models)) +
+                  labs(x = "", y = "") +
+                  scale_fill_scico(palette = "vik",
+                                   name = expression(sigma[Ensemble]),
+                                   na.value = "white",
+                                   limits = se_limits) +
+                  geom_contour(aes(x = coordinate_east, y = coordinate_north, z = as.numeric(!ocean)),
+                               color = "black", 
+                               size = 0.4) +
+                  coord_fixed() +
+                  theme_void() +
+                  theme(text = element_text(size = 12),
+                        legend.position = c(0.85, 0.75),
+                        legend.title = element_text(size = 9, margin = margin(b = 5)),
+                        legend.text = element_text(size = 9),
+                        legend.title.align = 0.5)
+
+plot_spatial_smooths <- c(plot_spatial_smooths, list(plot_sd_across))
+saveRDS(plot_spatial_smooths, "saved_files_lot_sales/plot_spatial_smooths_combined2.rds")
 wrap_plots(plot_spatial_smooths, ncol = 3)
 
 ```
@@ -2029,13 +2167,11 @@ wrap_plots(plot_smooths, ncol = 2) +
 
 
 ```{r Factor effects 1, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
-factor_variables <- c(
-  house_type = "House type",
-  type = "Type",
-  municipality_type = "Municipality type",
-  roof_type = "Roof type",
-  wall_type = "Wall type",
-  heating_type = "Heating type")
+factor_variables <- c(house_type = "House type",
+                      municipality_type = "Municipality type",
+                      roof_type = "Roof type",
+                      wall_type = "Wall type",
+                      heating_type = "Heating type")
 
 make_termwise_df <- function(model, model_data, variable, interaction_by = "municipality_type") {
 
@@ -2220,7 +2356,7 @@ performance_countrywide <- residual_df %>%
 
 performance_municipality_type <- residual_df %>%
                                  mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
-                                 group_by(dataset_type, municipality_type) %>%
+                                 group_by(dataset_type, type, municipality_type) %>%
                                  summarise(MALE = mean(abs(residual_sales_price_log)),
                                            MAPE = mean(abs(residual_sales_price_percent)),
                                            MAE = mean(abs(residual_sales_price)),
