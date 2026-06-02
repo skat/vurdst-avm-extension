@@ -1201,8 +1201,6 @@ plot_spatial_smooths <- imap(spatial_grids, function(model_set, model_name) {
 
 saveRDS(plot_spatial_smooths, "saved_files_lot_sales/plot_spatial_smooths.rds")
 
-#example plots
-wrap_plots(plot_spatial_smooths$model_13_standard_property_value_Model1_none_coords, ncol = 4)
 ```
 
 
@@ -1648,7 +1646,6 @@ plot_ensemble_geographic <- imap(dataset_spread, function(df, model_specificatio
 
 saveRDS(plot_ensemble_geographic, "saved_files_lot_sales/plot_ensemble_geographic.rds")
 
-
 ```
 
 
@@ -1677,7 +1674,8 @@ assign_lot_values <- function(data, reference_data) {
 dataset_lot_sales <- assign_lot_values(dataset_lot_sales, dataset_property_sales)
 
 dataset_sales <- bind_rows(dataset_lot_sales, dataset_property_sales)
-dataset_sales$type = ordered(dataset_sales$type, levels = c("Lot sale", "Property sale"))
+dataset_sales$type = factor(dataset_sales$type, levels = c("Lot sale", "Property sale"))
+dataset_sales$type_ordered = ordered(dataset_sales$type, levels = c("Lot sale", "Property sale"))
 
 
 #assign folds
@@ -1710,7 +1708,7 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
   
   model <- bam(sales_price ~ 
                s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-               s(coordinate_east, coordinate_north, k = k_spatial, by = type, pc = c(697000, 6150000)) +
+               s(coordinate_east, coordinate_north, k = 500, by = type_ordered, pc = c(697000, 6150000)) +
                s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
                s(year_built, k = k_other, by = municipality_type, pc = 1970) +
                s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
@@ -1727,11 +1725,12 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
                s(ocean_view, k = k_other, pc = 0) +
                s(lake_view, k = k_other, pc = 0) +
                s(forest_size, k = k_other, pc = 0) +
-               s(number_of_bathrooms, k = 2, pc = 1) +
+               s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
                house_type * municipality_type +
                roof_type * municipality_type +
                wall_type * municipality_type +
-               heating_type * municipality_type,               
+               heating_type * municipality_type +
+               type,               
                data = training_subset,
                chunk.size = nrow(training_subset),
                family = tw(link = log),
@@ -1923,6 +1922,8 @@ prediction_results <- future_lapply(seq_along(models), function(i) {
   model_data <- model.frame(model)
   grid <- coordinate_grid
   grid$type <- factor("Property sale", levels = levels(model_data$type))
+  grid$type_ordered <- ordered("Property sale", levels = levels(model_data$type))
+
 
   for (var in setdiff(all.vars(formula(model)), names(grid))) {
     x <- model_data[[var]]
@@ -2169,6 +2170,7 @@ wrap_plots(plot_smooths, ncol = 2) +
 ```{r Factor effects 1, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 factor_variables <- c(house_type = "House type",
                       municipality_type = "Municipality type",
+                      type = "Type",
                       roof_type = "Roof type",
                       wall_type = "Wall type",
                       heating_type = "Heating type")
@@ -2414,5 +2416,214 @@ tbl_latex <- kable(performance_sorted %>% select(-`Municipality type`),
 
 
 ```
+
+
+```{r Model interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
+
+make_interpretation_results <- function(model, model_name) {
+  
+  model_data <- model.frame(model)
+  
+  # generate fictitious properties
+  grid <- data.frame(coordinate_east = c(697000, 462037, 469142, 725599),
+                     coordinate_north = c(6150000, 6150225, 6322298, 6185920))
+  
+  point_constraints <- list()
+  for (sm in model$smooth) {
+    if (!is.null(sm$point.con)) {point_constraints <- c(point_constraints, sm$point.con)}
+  }
+  
+  vars_in_model <- all.vars(formula(model))
+  
+  # fill missing variables in grid
+  for (var in setdiff(vars_in_model, names(grid))) {
+    
+    if (is.factor(model_data[[var]])) {
+      
+      grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)),
+                            levels = levels(model_data[[var]]))
+      
+    } else {
+      value <- if (var %in% names(point_constraints)) {
+        point_constraints[[var]]
+      } else {
+        mean(model_data[[var]], na.rm = TRUE)
+      }
+      grid[[var]] <- rep(value, nrow(grid))
+    }
+  }
+  
+  # augment properties
+  grid$coast_distance[2:4] <- 100
+  grid$year_built[2:4] <- 2020
+  grid$municipality_type[2:4] <- factor(c("Provincial", "Rural", "Capital"), levels = levels(model_data$municipality_type))
+  grid$location <- c("Reference", "Esbjerg", "Nordjylland", "Strandvejen")
+  
+  #add rows for property case
+  grid <- bind_rows(grid, grid)
+  grid$type[5:8] <- factor("Property sale", levels = levels(model_data$type))
+  grid$type_ordered[5:8] <- ordered("Property sale", levels = levels(model_data$type))
+  
+  terms <- as.data.frame(predict.gam(model, grid, type = "terms"))
+  
+  # helper for summing possibly missing columns
+  sum_terms <- function(df, cols) {
+    cols_present <- intersect(cols, names(df))
+    if (length(cols_present) == 0) {return(rep(0, nrow(df)))}
+    rowSums(df[, cols_present, drop = FALSE])
+  }
+  
+  adjustments <- terms %>%
+                 mutate(standard_price = exp(as.vector(coef(model))[1]),
+      
+                        adjustment_coordinates = exp(`s(coordinate_east,coordinate_north)`),
+                        
+                        adjustment_type_base = exp(type),
+                        
+                        adjustment_type_coordinates = exp(`s(coordinate_east,coordinate_north):type_orderedProperty sale`),
+      
+                        # Smooths with municipality_type interactions – 
+                        #might as well sum over all is it only non-zero for the relevant smooth
+                         
+                        adjustment_sales_date = exp(`s(sales_date_numeric):municipality_typeCapital` +
+                                                    `s(sales_date_numeric):municipality_typeRural` +
+                                                    `s(sales_date_numeric):municipality_typeCommuter` +
+                                                    `s(sales_date_numeric):municipality_typeProvincial` +
+                                                    `s(sales_date_numeric):municipality_typeLarge city`),
+      
+                        adjustment_year_built = exp(`s(year_built):municipality_typeCapital` +
+                                                    `s(year_built):municipality_typeRural` +
+                                                    `s(year_built):municipality_typeCommuter` +
+                                                    `s(year_built):municipality_typeProvincial` +
+                                                    `s(year_built):municipality_typeLarge city`),
+      
+                        adjustment_year_rebuilt = exp(`s(year_rebuilt):municipality_typeCapital` +
+                                                      `s(year_rebuilt):municipality_typeRural` +
+                                                      `s(year_rebuilt):municipality_typeCommuter` +
+                                                      `s(year_rebuilt):municipality_typeProvincial` +
+                                                      `s(year_rebuilt):municipality_typeLarge city`),
+      
+                        adjustment_living_space = exp(`s(living_space):municipality_typeCapital` +
+                                                      `s(living_space):municipality_typeRural` +
+                                                      `s(living_space):municipality_typeCommuter` +
+                                                      `s(living_space):municipality_typeProvincial` +
+                                                      `s(living_space):municipality_typeLarge city`),
+      
+                        adjustment_lot_size = exp(`s(lot_size):municipality_typeCapital` +
+                                                  `s(lot_size):municipality_typeRural` +
+                                                  `s(lot_size):municipality_typeCommuter` +
+                                                  `s(lot_size):municipality_typeProvincial` +
+                                                  `s(lot_size):municipality_typeLarge city`),
+                                              
+                        adjustment_coast_distance = exp(`s(coast_distance)`),
+          
+                        adjustment_lake_distance = exp(`s(lake_distance)`),
+          
+                        adjustment_stream_distance = exp(`s(stream_distance)`),
+          
+                        adjustment_road_distance = exp(`s(road_distance)`),
+          
+                        adjustment_highway_distance = exp(`s(highway_distance)`),
+          
+                        adjustment_train_station_distance = exp(`s(train_station_distance)`),
+          
+                        adjustment_railway_distance = exp(`s(railway_distance)`),
+          
+                        adjustment_windturbine_distance = exp(`s(windturbine_distance)`),
+          
+                        adjustment_ocean_view = exp(`s(ocean_view)`),
+          
+                        adjustment_lake_view = exp(`s(lake_view)`),
+          
+                        adjustment_forest_size = exp(`s(forest_size)`),
+          
+                        adjustment_number_of_bathrooms = exp(`s(number_of_bathrooms):municipality_typeCapital` +
+                                                             `s(number_of_bathrooms):municipality_typeRural` +
+                                                             `s(number_of_bathrooms):municipality_typeCommuter` +
+                                                             `s(number_of_bathrooms):municipality_typeProvincial` +
+                                                             `s(number_of_bathrooms):municipality_typeLarge city`),
+      
+                        #Factor terms with interactions
+                        adjustment_municipality_type = exp(municipality_type),
+                        adjustment_house_type = exp(house_type + `house_type:municipality_type`),
+                        adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
+                        adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
+                        adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
+                        
+                        adjustment_type = adjustment_type_base * adjustment_type_coordinates,
+ 
+                        adjustment_location = adjustment_coordinates *
+                                              adjustment_sales_date *
+                                              adjustment_lot_size *
+                                              adjustment_coast_distance *
+                                              adjustment_lake_distance *
+                                              adjustment_stream_distance *
+                                              adjustment_road_distance *
+                                              adjustment_highway_distance *
+                                              adjustment_train_station_distance *
+                                              adjustment_railway_distance *
+                                              adjustment_windturbine_distance *
+                                              adjustment_ocean_view *
+                                              adjustment_lake_view *
+                                              adjustment_municipality_type,
+      
+                        adjustment_building = adjustment_year_built *
+                                              adjustment_year_rebuilt *
+                                              adjustment_living_space *
+                                              adjustment_roof_type *
+                                              adjustment_wall_type *
+                                              adjustment_heating_type,
+      
+                        adjustment_total = adjustment_type * adjustment_location * adjustment_building,
+                        
+                        predicted_price = standard_price * adjustment_total) %>%
+    
+                        select(standard_price,
+                               adjustment_type_base,
+                               adjustment_type_coordinates,
+                               adjustment_municipality_type,
+                               adjustment_coordinates,
+                               adjustment_sales_date,
+                               adjustment_year_built,
+                               adjustment_year_rebuilt,
+                               adjustment_living_space,
+                               adjustment_lot_size,
+                               adjustment_coast_distance,
+                               adjustment_lake_distance,
+                               adjustment_stream_distance,
+                               adjustment_road_distance,
+                               adjustment_highway_distance,
+                               adjustment_train_station_distance,
+                               adjustment_railway_distance,
+                               adjustment_windturbine_distance,
+                               adjustment_ocean_view,
+                               adjustment_lake_view,
+                               adjustment_forest_size,
+                               adjustment_number_of_bathrooms,
+                               adjustment_house_type,
+                               adjustment_roof_type,
+                               adjustment_wall_type,
+                               adjustment_heating_type,
+                               adjustment_type,
+                               adjustment_location,
+                               adjustment_building,
+                               adjustment_total,
+                               predicted_price)
+  
+  grid_out <- grid %>% select(coast_distance, year_built, municipality_type, location, type)
+  
+  bind_cols(grid_out, adjustments) %>% mutate(Model = model_name, .before = 1)
+}
+
+results_all_models <- bind_rows(
+  lapply(names(models), function(model_name) {
+    make_interpretation_results(models[[model_name]], model_name)
+  })
+)
+
+saveRDS(results_all_models, "saved_files/results_interpretation_all_models.rds")
+
+```
+
 
 
