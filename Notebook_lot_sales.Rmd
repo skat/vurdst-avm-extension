@@ -226,9 +226,10 @@ A simple 4-fold cross-validation split is implemented in the code below.
 ```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 assign_cv_folds <- function(data, N, seed = 123) {
+  
   set.seed(seed)
-  data %>% mutate(validation_set = sample(rep(1:N, length.out = n())),
-                  .rand = runif(n()))
+  data %>% mutate(validation_set = sample(rep(1:N, length.out = n())), .rand = runif(n()))
+  
 }
 
 #property sales
@@ -338,26 +339,25 @@ if (load) {
 
 ```{r Other smooth effects, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
-smooth_variables <- c(
-  sales_date_numeric = "Sales date",
-  year_built = "Year built",
-  year_rebuilt = "Year rebuilt",
-  living_space = "Living space [m²]",
-  lot_size = "Lot size [m²]",
-  unused_floor_area = "Unused floor area [m²]",
-  number_of_divisions = "Number of divisions",
-  coast_distance = "Distance to coast [m]",
-  lake_distance = "Distance to lake [m]",
-  stream_distance = "Distance to stream [m]",
-  road_distance = "Distance to road [m]",
-  highway_distance = "Distance to highway [m]",
-  train_station_distance = "Distance to train station [m]",
-  railway_distance = "Distance to railway [m]",
-  windturbine_distance = "Distance to wind turbine [m]",
-  ocean_view = "Ocean view [m]",
-  lake_view = "Lake view [m]",
-  forest_size = "Forest size [ha]",
-  number_of_bathrooms = "Number of bathrooms")
+smooth_variables <- c(sales_date_numeric = "Sales date",
+                      year_built = "Year built",
+                      year_rebuilt = "Year rebuilt",
+                      living_space = "Living space [m²]",
+                      lot_size = "Lot size [m²]",
+                      unused_floor_area = "Unused floor area [m²]",
+                      number_of_divisions = "Number of divisions",
+                      coast_distance = "Distance to coast [m]",
+                      lake_distance = "Distance to lake [m]",
+                      stream_distance = "Distance to stream [m]",
+                      road_distance = "Distance to road [m]",
+                      highway_distance = "Distance to highway [m]",
+                      train_station_distance = "Distance to train station [m]",
+                      railway_distance = "Distance to railway [m]",
+                      windturbine_distance = "Distance to wind turbine [m]",
+                      ocean_view = "Ocean view [m]",
+                      lake_view = "Lake view [m]",
+                      forest_size = "Forest size [ha]",
+                      number_of_bathrooms = "Number of bathrooms")
 
 plot_smooths <- list()
 
