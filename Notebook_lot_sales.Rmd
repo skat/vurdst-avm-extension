@@ -1725,8 +1725,8 @@ fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0,
                s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
                s(living_space, k = k_other, by = municipality_type, pc = 140) +
                s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-               s(number_of_divisions, k = 2, pc = 1) + 
-               s(maximum_coverage_percentage, k = 2, pc = 30) + 
+               #s(number_of_divisions, k = 2, pc = 1) + 
+               #s(maximum_coverage_percentage, k = 2, pc = 30) + 
                s(coast_distance, k = k_other, pc = 1500) +
                s(lake_distance, k = k_other, pc = 500) +
                s(stream_distance, k = k_other, pc = 1000) +
