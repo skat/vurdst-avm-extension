@@ -11,18 +11,17 @@ Dette repository indeholder en videreudvikling af Vurderingsstyrelsens nuværend
 Modellen køres i øjeblikket ved hjælp af følgende R Markdown-notebooks:
 
 1. **Dataset.Rmd**  
-   - Danner filen `dataset.csv`, som bruges til at fitte den statistiske model.  
-   - Henter salgsejendomme fra 2020- og 2024-premodeldata.  
-   - Samler dem til et datasæt af unikke salgsejendomme fra perioden **2014–2024**.  
+   - Danner filen `dataset.rds`, som bruges til at fitte den statistiske model.  
+   - Henter salgsejendomme, vurderingsejendomme og grundsalg fra 2020- og 2024-premodeldata.  
 
 2. **Notebook.Rmd**  
-   - Indlæser `dataset.csv`.  
-   - Fitter ejendomsværdimodellen.  
+   - Indlæser `dataset.rds`.  
+   - Fitter ejendomsværdimodellerne.  
    - Indeholder analyser af modelkvalitet og performance.  
 
 ## Øvrige filer
 
-- **dataset.csv**  
+- **dataset.rds**  
   - Inkluderet for, at man kan springe eksekveringen af `Dataset.Rmd` over.
 
 - **coordinates_ocean_land.csv**  
@@ -44,12 +43,11 @@ This repository contains an improved version of the Danish Public Valuation Agen
 At the time of writing, the model is executed using the following R Markdown notebooks:
 
 1. **Dataset.Rmd**  
-   - Produces `dataset.csv`, which is used to fit the statistical model.  
-   - Imports property sales from the 2020 and 2024 pre-model datasets.  
-   - Combines these into a dataset of unique property sales from **2014–2024**.
+   - Produces `dataset.rds`, which is used to fit the statistical model.  
+   - Imports property sales, properties and lot sales from the 2020 and 2024 pre-model datasets.
 
 2. **Notebook.Rmd**  
-   - Loads `dataset.csv`.  
+   - Loads `dataset.rds`.  
    - Fits the property valuation model.  
    - Contains analyses evaluating model quality and performance.
 

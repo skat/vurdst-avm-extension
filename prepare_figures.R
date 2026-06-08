@@ -203,9 +203,9 @@ ggplot2::ggsave("Paper_figures/Figure5.pdf", Figure5, width = 13, height = 9)
 
 
 ## Figure 6 ##
-plot_test_residuals_log <- readRDS("saved_files/plot_test_residuals_log.rds")
-plot_test_residuals_percent <- readRDS("saved_files/plot_test_residuals_percent.rds")
-plot_test_residuals <- readRDS("saved_files/plot_test_residuals.rds")
+plot_test_residuals_log <- readRDS("saved_files/plot_validation_residuals_log.rds")
+plot_test_residuals_percent <- readRDS("saved_files/plot_validation_residuals_percent.rds")
+plot_test_residuals <- readRDS("saved_files/plot_validation_residuals.rds")
 plot_log_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_log_errors.rds")
 plot_percentage_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_percentage_errors.rds")
 plot_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_errors.rds")
