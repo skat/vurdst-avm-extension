@@ -237,7 +237,9 @@ standardize_property <- function(data, reference_data) {
 }
 
 dataset_lot_sales <- standardize_property(dataset_lot_sales, dataset)
-dataset_lot_sales$type <- factor("Lot sale", levels = c("Property sale", "Lot sale"))
+dataset_lot_sales$type = factor("Lot sale", levels = c("Lot sale", "Property sale"))
+dataset_lot_sales$type_ordered = ordered("Lot sale", levels = c("Lot sale", "Property sale"))
+
 
 
 get_residuals <- function(models, dataset, fold_from_name = TRUE) {
