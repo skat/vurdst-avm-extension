@@ -1785,7 +1785,7 @@ if (load) {
     fraction = 1.0,
     checkpoint_prefix = "main"
   )
-  saveRDS(models, "saved_files_lot_sales/models_combined_new_new.rds")
+  saveRDS(models, "saved_files_lot_sales/models_combined.rds")
 }
 
 ```
