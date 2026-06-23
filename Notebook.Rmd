@@ -74,7 +74,7 @@ This notebook provides a walkthrough of the analysis and results described in se
 ## 1. Description
 The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from the period 01/01/2014-01/01/2024. The dataset, included as a .rds file in this repository, is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
 
-```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
+```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE}
 
 dataset <- readRDS("dataset.rds")
 #The three types included in the dataset. This notebook only uses Property and Property Sales
@@ -623,15 +623,8 @@ for (var in names(smooth_variables)) {
 
   smooth_dfs <- lapply(names(models), function(model_name) {
     mod <- models[[model_name]]
-    df <- tryCatch(
-      smooth_estimates(mod, smooth = paste0("s(", var, ")"), partial_match = TRUE),
-      error = function(e) {
-        message(sprintf("Skipping '%s' in %s: %s", var, model_name, e$message))
-        return(NULL)
-      })
-    if (!is.null(df)) {
-      df$Model <- sub("^Model", "Model ", model_name)
-    }
+    df <- tryCatch(smooth_estimates(mod, smooth = paste0("s(", var, ")"), partial_match = TRUE), error = function(e) {return(NULL)})
+    if (!is.null(df)) {df$Model <- sub("^Model", "Model ", model_name)}
     df
   })
 
@@ -2209,7 +2202,7 @@ wrap_plots(plots_spatial_combined_filtered, ncol = 3)
 ```
 
 
-```{r Other smooth effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Other smooth effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 # -------------------------
 # 1. Smooth variables
@@ -2248,9 +2241,7 @@ make_standard_property_smooth_plot <- function(models, model_set_name) {
     var_name <- paste0("standard_property_value_Model", fold_number)
     
     df <- tryCatch(smooth_estimates(mod, smooth = paste0("s(", var_name, ")"), partial_match = TRUE),
-          error = function(e) { message(sprintf("Skipping standard property smooth in %s: %s", model_name, e$message))
-          return(NULL)
-      }
+                   error = function(e) {return(NULL)}
     )
     
     if (is.null(df)) return(NULL)
@@ -2294,24 +2285,18 @@ make_single_smooth_plot <- function(models, model_set_name, var, label) {
     mod <- models[[model_name]]
     
     df <- tryCatch(smooth_estimates(mod, smooth = paste0("s(", var, ")"), partial_match = TRUE),
-      error = function(e) {
-        message(sprintf("Skipping '%s' in %s: %s", var, model_name, e$message))
-        return(NULL)
-      }
+                   error = function(e) {return(NULL)}
     )
     
-    if (!is.null(df)) {
-      df$Model <- sub("^Model", "Model ", model_name)
-    }
+    if (!is.null(df)) {df$Model <- sub("^Model", "Model ", model_name)}
     
     df
+    
   })
   
   smooth_dfs <- Filter(Negate(is.null), smooth_dfs)
   
-  if (length(smooth_dfs) == 0) {
-    return(NULL)
-  }
+  if (length(smooth_dfs) == 0) {return(NULL)}
   
   combined_df <- bind_rows(smooth_dfs)
   
@@ -2840,7 +2825,7 @@ print(plot_errors_lot_models)
 ```
 
 
-```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
+```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # 1. Settings
@@ -3009,10 +2994,7 @@ wrap_plots(plot_ensemble_geographic, ncol = 2)
 ```
 
 
-
-```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
-
-load <- FALSE
+```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # Settings
@@ -3094,10 +3076,9 @@ make_median_text <- function(df) {
             building_value = "Building",
             standard_building_value = "Standard building")
   
-  map2_chr(names(vars), vars, function(var, label) {
-    paste0(label, ": ", round(median(df[[var]], na.rm = TRUE) / 1e6, 2), "M")
-  }) %>%
-    paste(collapse = "\n")
+  map2_chr(names(vars), vars, function(var, label) {paste0(label, ": ", round(median(df[[var]], na.rm = TRUE) / 1e6, 2), "M")}) %>%
+  paste(collapse = "\n")
+  
 }
 
 density_layer <- function(df, var, label) {
@@ -3210,9 +3191,7 @@ saveRDS(negative_building_summary, "saved_files/negative_building_summary.rds")
 plot_value_densities <- imap(
   property_decomposition,
   function(model_set, model_approach) {
-    imap(model_set,
-      function(df, fold_name) {make_density_plot(df, model_approach, fold_name, negative_building_summary)}
-    )
+    imap(model_set, function(df, fold_name) {make_density_plot(df, model_approach, fold_name, negative_building_summary)})
   }
 )
 
@@ -3286,9 +3265,8 @@ make_interpretation_results <- function(model, model_name) {
                      coordinate_north = c(6150000, 6150225, 6322298, 6185920))
   
   point_constraints <- list()
-  for (sm in model$smooth) {
-    if (!is.null(sm$point.con)) {point_constraints <- c(point_constraints, sm$point.con)}
-  }
+  
+  for (sm in model$smooth) {if (!is.null(sm$point.con)) {point_constraints <- c(point_constraints, sm$point.con)}}
   
   vars_in_model <- all.vars(formula(model))
   
@@ -3297,8 +3275,7 @@ make_interpretation_results <- function(model, model_name) {
     
     if (is.factor(model_data[[var]])) {
       
-      grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)),
-                            levels = levels(model_data[[var]]))
+      grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)), levels = levels(model_data[[var]]))
       
     } else {
       value <- if (var %in% names(point_constraints)) {
