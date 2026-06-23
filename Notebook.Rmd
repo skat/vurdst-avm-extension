@@ -969,7 +969,7 @@ residual_df_validation <- residual_df %>%
                           filter(validation) %>% 
                           mutate(pm20 = as.integer(abs(residual_sales_price_percent) <= 20))
 
-### Various residual plots for test set
+### Various residual plots on validation set
 plot_validation_residuals_log <- ggplot(residual_df_validation,
                                         aes(x = sales_price / 1e6, 
                                             y = residual_sales_price_log)) +
@@ -1061,7 +1061,7 @@ plot_validation_residuals <- ggplot(residual_df_validation,
 saveRDS(plot_validation_residuals, "saved_files/plot_validation_residuals.rds")
 print(plot_validation_residuals)
 
-### Smoothed error plots for train, validation and test error
+### Smoothed error plots for training and validation error vs sales date
 
 residual_df$type <- with(residual_df, ifelse(validation, "Validation error", "Training error"))
 
@@ -2628,7 +2628,7 @@ residual_df_lot_models <- bind_rows(residual_direct_lot,
                                     residual_standard_property,
                                     residual_combined)
 
-saveRDS(residual_df_lot_models, "saved_files_lot_sales/residual_df_lot_models.rds")
+saveRDS(residual_df_lot_models, "saved_files/residual_df_lot_models.rds")
 
 
 # -------------------------
@@ -2677,7 +2677,7 @@ performance_sorted_lot_models <- performance_lot_models %>%
                                         `PM20 [%]` = PM20,
                                         `COD [%]` = COD)
        
-saveRDS(performance_sorted_lot_models, "saved_files_lot_sales/performance_sorted_lot_models.rds")
+saveRDS(performance_sorted_lot_models, "saved_files/performance_sorted_lot_models.rds")
 
 # -------------------------
 # 6. Tables
@@ -2699,7 +2699,7 @@ tbl_latex_lot_models <- kable(performance_sorted_lot_models,
                                       position = "center",
                                       latex_options = c("hold_position"))
 
-writeLines(tbl_latex_lot_models, "saved_files_lot_sales/performance_lot_models.tex")
+writeLines(tbl_latex_lot_models, "saved_files/performance_lot_models.tex")
 
 # -------------------------
 # 7. Validation residuals
@@ -2710,28 +2710,29 @@ residual_df_validation_lot_models <- residual_df_lot_models %>%
                                      mutate(pm20 = as.integer(abs(residual_sales_price_percent) <= 20),
                                             model_approach = factor(model_approach, levels = c("Direct lot model", "Standard property model", "Combined model")))
 
+
 # -------------------------
 # 8. Residual plots: log residuals
 # -------------------------
 
 plot_validation_residuals_log_lot_models <- ggplot(residual_df_validation_lot_models,
-                                                    aes(x = sales_price / 1e6,
-                                                        y = residual_sales_price_log,
-                                                        color = model_approach)) +
+                                                   aes(x = sales_price / 1e6,
+                                                       y = residual_sales_price_log,
+                                                       color = model_approach)) +
                                             geom_point(alpha = 0.25, size = 0.25) +
-                                            geom_smooth(aes(y = abs(residual_sales_price_log), 
-                                                        linetype = model_approach),
+                                            geom_smooth(aes(y = abs(residual_sales_price_log), linetype = "MALE"),
                                                         se = FALSE,
                                                         linewidth = 0.8) +
+                                            scale_linetype_manual(name = NULL, values = c(MALE = "solid")) +
                                             ylim(-1, 1) +
-                                            labs(x = "Sales price [million DKK]",
-                                                 y = "Log residuals",
-                                                 color = NULL,
-                                                 linetype = NULL) +
+                                            labs(x = "Sales price [million DKK]", 
+                                                 y = "Log residuals", 
+                                                 color = NULL) +
                                             theme_minimal()
 
-saveRDS(plot_validation_residuals_log_lot_models, "saved_files_lot_sales/plot_validation_residuals_log_lot_models.rds")
+saveRDS(plot_validation_residuals_log_lot_models, "saved_files/plot_validation_residuals_log_lot_models.rds")
 print(plot_validation_residuals_log_lot_models)
+
 
 # -------------------------
 # 9. Residual plots: percentage residuals
@@ -2742,21 +2743,22 @@ plot_validation_residuals_percent_lot_models <- ggplot(residual_df_validation_lo
                                                            y = residual_sales_price_percent,
                                                            color = model_approach)) +
                                                 geom_point(alpha = 0.25, size = 0.25) +
-                                                geom_smooth(aes(y = abs(residual_sales_price_percent), linetype = model_approach),
+                                                geom_smooth(aes(y = abs(residual_sales_price_percent), linetype = "MAPE"),
                                                             se = FALSE,
                                                             linewidth = 0.8) +
-                                                geom_smooth(aes(y = pm20 * 100, linetype = model_approach),
+                                                geom_smooth(aes(y = pm20 * 100, linetype = "PM20"),
                                                             se = FALSE,
                                                             linewidth = 0.8) +
+                                                scale_linetype_manual(name = NULL, values = c(MAPE = "solid", PM20 = "dashed")) +
                                                 ylim(-100, 100) +
-                                                labs(x = "Sales price [million DKK]",
-                                                     y = "Percentage residuals [%]",
-                                                     color = NULL,
-                                                     linetype = NULL) +
+                                                labs(x = "Sales price [million DKK]", 
+                                                     y = "Percentage residuals [%]", 
+                                                     color = NULL) +
                                                 theme_minimal()
 
-saveRDS(plot_validation_residuals_percent_lot_models, "saved_files_lot_sales/plot_validation_residuals_percent_lot_models.rds")
+saveRDS(plot_validation_residuals_percent_lot_models, "saved_files/plot_validation_residuals_percent_lot_models.rds")
 print(plot_validation_residuals_percent_lot_models)
+
 
 # -------------------------
 # 10. Residual plots: DKK residuals
@@ -2767,17 +2769,17 @@ plot_validation_residuals_lot_models <- ggplot(residual_df_validation_lot_models
                                                    y = residual_sales_price / 1e6,
                                                    color = model_approach)) +
                                         geom_point(alpha = 0.25, size = 0.25) +
-                                        geom_smooth(aes(y = abs(residual_sales_price) / 1e6, linetype = model_approach),
+                                        geom_smooth(aes(y = abs(residual_sales_price) / 1e6, linetype = "MAE"),
                                                     se = FALSE,
                                                     linewidth = 0.8) +
+                                        scale_linetype_manual(name = NULL, values = c(MAE = "solid")) +
                                         ylim(-3, 3) +
                                         labs(x = "Sales price [million DKK]",
                                              y = "Residuals [million DKK]",
-                                             color = NULL,
-                                             linetype = NULL) +
+                                             color = NULL) +
                                         theme_minimal()
 
-saveRDS(plot_validation_residuals_lot_models, "saved_files_lot_sales/plot_validation_residuals_lot_models.rds")
+saveRDS(plot_validation_residuals_lot_models, "saved_files/plot_validation_residuals_lot_models.rds")
 print(plot_validation_residuals_lot_models)
 
 # -------------------------
@@ -2800,7 +2802,7 @@ plot_log_errors_lot_models <- ggplot(residual_df_lot_models) +
                                    linetype = NULL) +
                               theme_minimal()
 
-saveRDS(plot_log_errors_lot_models, "saved_files_lot_sales/plot_log_errors_lot_models.rds")
+saveRDS(plot_log_errors_lot_models, "saved_files/plot_log_errors_lot_models.rds")
 print(plot_log_errors_lot_models)
 
 plot_percentage_errors_lot_models <- ggplot(residual_df_lot_models) +
@@ -2815,7 +2817,7 @@ plot_percentage_errors_lot_models <- ggplot(residual_df_lot_models) +
                                           linetype = NULL) +
                                      theme_minimal()
 
-saveRDS(plot_percentage_errors_lot_models, "saved_files_lot_sales/plot_percentage_errors_lot_models.rds")
+saveRDS(plot_percentage_errors_lot_models, "saved_files/plot_percentage_errors_lot_models.rds")
 
 print(plot_percentage_errors_lot_models)
 
@@ -2832,13 +2834,13 @@ plot_errors_lot_models <- ggplot(residual_df_lot_models) +
                                linetype = NULL) +
                           theme_minimal()
 
-saveRDS(plot_errors_lot_models, "saved_files_lot_sales/plot_errors_lot_models.rds")
+saveRDS(plot_errors_lot_models, "saved_files/plot_errors_lot_models.rds")
 print(plot_errors_lot_models)
 
 ```
 
 
-```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE}
+```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 # -------------------------
 # 1. Settings
@@ -2919,11 +2921,7 @@ spread_long <- imap_dfr(
   dataset_spread,
   function(df, model_approach) {
     
-    df %>%
-      transmute(
-        model_approach = model_approach,
-        sigma_Ensemble = sigma_Ensemble
-      )
+    df %>% transmute(model_approach = model_approach, sigma_Ensemble = sigma_Ensemble)
   }
 )
 
@@ -3006,13 +3004,13 @@ plot_ensemble_geographic <- imap(
 )
 
 saveRDS(plot_ensemble_geographic, "saved_files/plot_ensemble_geographic.rds")
-wrap_plots(plot_ensemble_geographic, ncol = 3)
+wrap_plots(plot_ensemble_geographic, ncol = 2)
 
 ```
 
 
 
-```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE}
+```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
 load <- FALSE
 
@@ -3220,17 +3218,6 @@ plot_value_densities <- imap(
 
 saveRDS(plot_value_densities, "saved_files/plot_value_densities.rds")
 
-plot_value_densities_flat <- flatten(plot_value_densities)
-
-plot_value_densities_combined <- wrap_plots(plot_value_densities_flat, ncol = 2) +
-                                 plot_layout(guides = "collect") &
-                                 theme(legend.position = "bottom",
-                                       legend.box = "horizontal")
-
-saveRDS(plot_value_densities_combined, "saved_files/plot_value_densities_combined.rds")
-
-print(plot_value_densities_combined)
-
 # -------------------------
 # Building diagnostics
 # -------------------------
@@ -3258,25 +3245,25 @@ make_building_diagnostic_plot <- function(x_var, x_label, x_limits_plot) {
   ggplot(building_diagnostics_long %>%
          filter(.data[[x_var]] >= x_limits_plot[1],
                 .data[[x_var]] <= x_limits_plot[2],
-                 building_value_million >= building_value_limits[1],
-                 building_value_million <= building_value_limits[2]),
+                building_value_million >= building_value_limits[1],
+                building_value_million <= building_value_limits[2]),
          aes(x = .data[[x_var]],
              y = building_value_million,
              color = model_approach)) +
-  geom_point(alpha = 0.15, size = 0.25) +
-  geom_smooth(se = FALSE, linewidth = 0.9) +
-  facet_wrap(~ fold_name, ncol = 4) +
-  coord_cartesian(xlim = x_limits_plot, ylim = building_value_limits) +
-  labs(title = paste("Building value vs", x_label),
-       x = x_label,
-       y = "Building value [million DKK]",
-       color = NULL) +
-  theme_minimal()
+         geom_smooth(se = FALSE,
+                     linewidth = 1) +
+         facet_wrap(~ fold_name, ncol = 4) +
+         coord_cartesian(xlim = x_limits_plot,
+                         ylim = building_value_limits) +
+         labs(title = paste("Building value vs", x_label),
+              x = x_label,
+              y = "Building value [million DKK]",
+              color = NULL) +
+         theme_minimal()
   
 }
 
 plot_building_value_living_space <- make_building_diagnostic_plot("living_space", "Living space [m²]", living_space_limits)
-
 plot_building_value_year_built <- make_building_diagnostic_plot("year_built", "Year built", year_built_limits)
 
 saveRDS(plot_building_value_living_space, "saved_files/plot_building_value_living_space.rds")
