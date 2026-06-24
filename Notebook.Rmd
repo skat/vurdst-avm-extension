@@ -456,7 +456,7 @@ if (load) {
 #### Spatial smooth 
 The code below extracts the spatial smooth for each model and plots it alongside the log-scale standard error. The plotting relies on a premade spatial grid of Denmark, where ocean and land are marked. 
 
-```{r Spatial smooths property models, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Spatial smooths property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 
 # 1a) Predict once per model and store results
@@ -1311,7 +1311,7 @@ saveRDS(results_all_models, "saved_files/results_interpretation_property_models.
 
 The code below flags outliers based on both the GAM-based uncertainty estimates as well as the ensemble-based robustness measure. 
 
-```{r Uncertainty detection, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 predictions <- imap(models, function(model, name) {
   preds <- predict.gam(model, dataset_properties, type = "link", se.fit = TRUE)
@@ -1462,7 +1462,7 @@ print(plot_distribution)
 ### Concurvity Analysis
 The code investigates concurvity between the various smooths for Model 1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
 
-```{r Concurvity analysis, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Concurvity analysis, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 cc <- concurvity(models$Model1, full = FALSE)
 
@@ -1630,7 +1630,7 @@ print(concurvity_heatmaps)
 ### Convergence of the Spatial Smooth
 The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the test error.
 
-```{r Convergence basis set, eval=FALSE, echo=TRUE, warning=FALSE, results='hide'}
+```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000)
 k_values <- k_values[k_values <= k_spatial]
   
@@ -1916,7 +1916,7 @@ if (load) {
 }
 ```
 
-```{r Spatial smooths lot models, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Spatial smooths lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 # -------------------------------
 # Helper 1: complete prediction grid
@@ -2320,14 +2320,14 @@ make_single_smooth_plot <- function(models, model_set_name, var, label) {
             fill = .data[[by_var_name]]),
         alpha = 0.15,
         color = NA) +
-      geom_line(linewidth = 1) +
-      labs(title = plot_title,
-           x = label,
-           y = "Partial effect",
-           color = NULL,
-           fill = NULL,
-           linetype = NULL) +
-      theme_minimal()
+        geom_line(linewidth = 1) +
+        labs(title = plot_title,
+             x = label,
+             y = "Partial effect",
+             color = NULL,
+             fill = NULL,
+             linetype = NULL) +
+        theme_minimal()
     
   } else {
     
@@ -2373,9 +2373,7 @@ make_smooth_plots <- function(models, model_set_name, smooth_variables) {
                                    label = smooth_variables[[var]])
     }
     
-    if (!is.null(p)) {
-      plot_smooths[[var]] <- p
-    }
+    if (!is.null(p)) {plot_smooths[[var]] <- p}
   }
   
   plot_smooths
@@ -2406,15 +2404,18 @@ saveRDS(plot_smooths_standard_property, "saved_files/plot_smooths_standard_prope
 saveRDS(plot_smooths_combined, "saved_files/plot_smooths_combined.rds")
 
 # -------------------------
-# 7. Display plots
+# 7. Display selected plots (due to figure size mismatch some are moved to subsequent chunk)
 # -------------------------
-
-wrap_plots(plot_smooths_direct, ncol = 2)
+#
 
 wrap_plots(plot_smooths_standard_property, ncol = 2)
 
-wrap_plots(plot_smooths_combined, ncol = 2)
+```
 
+
+```{r Plot smooths direct and combined, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+wrap_plots(plot_smooths_direct, ncol = 2)
+wrap_plots(plot_smooths_combined, ncol = 2)
 ```
 
 
@@ -3220,7 +3221,7 @@ saveRDS(building_diagnostics_long, "saved_files/building_diagnostics_long.rds")
 # -------------------------
 
 make_building_diagnostic_plot <- function(x_var, x_label, x_limits_plot) {
-  
+
   ggplot(building_diagnostics_long %>%
          filter(.data[[x_var]] >= x_limits_plot[1],
                 .data[[x_var]] <= x_limits_plot[2],
@@ -3228,18 +3229,17 @@ make_building_diagnostic_plot <- function(x_var, x_label, x_limits_plot) {
                 building_value_million <= building_value_limits[2]),
          aes(x = .data[[x_var]],
              y = building_value_million,
-             color = model_approach)) +
-         geom_smooth(se = FALSE,
-                     linewidth = 1) +
-         facet_wrap(~ fold_name, ncol = 4) +
+             color = model_approach,
+             linetype = fold_name)) +
+         geom_smooth(se = FALSE, linewidth = 1) +
          coord_cartesian(xlim = x_limits_plot,
                          ylim = building_value_limits) +
          labs(title = paste("Building value vs", x_label),
               x = x_label,
               y = "Building value [million DKK]",
-              color = NULL) +
+              color = NULL,
+              linetype = "Fold") +
          theme_minimal()
-  
 }
 
 plot_building_value_living_space <- make_building_diagnostic_plot("living_space", "Living space [m²]", living_space_limits)
