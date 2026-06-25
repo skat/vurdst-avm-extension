@@ -1631,7 +1631,7 @@ print(concurvity_heatmaps)
 The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the test error.
 
 ```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
-k_values <- c(100, 200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000)
+k_values <- c(100, 200, 500, 1000, 1500, 2000, 3000, 4000, 5000)
 k_values <- k_values[k_values <= k_spatial]
   
 model_grid_basis <- expand.grid(fold = 1:N, k_spatial = k_values)
@@ -1798,7 +1798,7 @@ if (load) {
     training_subset <- data %>% filter(validation_set != fold)
     
     bam(sales_price ~
-        s(coordinate_east, coordinate_north, k = 500, pc = c(697000, 6150000)) +
+        s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
         s(sales_date_numeric, k = 5, by = municipality_type, pc = 2024) +
         s(lot_size, k = 5, by = municipality_type, pc = 800) +
         s(coast_distance, k = 5, pc = 1500) +
@@ -1828,7 +1828,7 @@ if (load) {
                                                    "s(lot_size, k = 6, pc = 800) + ",
                                                    "s(maximum_coverage_percentage, k = 3, pc = 30) + ",
                                                    "s(number_of_divisions, k = 3, pc = 1) + ",
-                                                   "s(coordinate_east, coordinate_north, k = 500, pc = c(697000, 6150000))"))
+                                                   "s(coordinate_east, coordinate_north, k = ", k_spatial, ", pc = c(697000, 6150000))"))
     
     bam(formula_standard_property,
         data = training_subset,
@@ -1845,7 +1845,7 @@ if (load) {
     
     bam(sales_price ~
         s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-        s(coordinate_east, coordinate_north, k = 500, by = type_ordered, pc = c(697000, 6150000)) +
+        s(coordinate_east, coordinate_north, k = k_spatial, by = type_ordered, pc = c(697000, 6150000)) +
         s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
         s(year_built, k = k_other, by = municipality_type, pc = 1970) +
         s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
@@ -2889,10 +2889,8 @@ if (load) {
       
       message("Predicting ensemble spread for ", model_approach, " ...")
       
-      spread_model_set(
-        model_set = model_set,
-        dataset = prediction_datasets[[model_approach]]
-      )
+      spread_model_set(model_set = model_set, dataset = prediction_datasets[[model_approach]])
+      
     }
   )
   
@@ -2998,6 +2996,10 @@ wrap_plots(plot_ensemble_geographic, ncol = 2)
 ```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
+# Property, lot and building value decomposition
+# -------------------------
+
+# -------------------------
 # Settings
 # -------------------------
 
@@ -3009,8 +3011,8 @@ living_space_limits <- c(0, 400)
 year_built_limits <- c(1900, 2024)
 
 model_sets <- list(direct_lot_model = models_direct,
-                    standard_property_model = models_standard_property,
-                    combined_model = models_combined)
+                   standard_property_model = models_standard_property,
+                   combined_model = models_combined)
 
 # -------------------------
 # Helpers
@@ -3025,11 +3027,11 @@ prepare_type <- function(data, type_value) {
 get_property_value_vars <- function(fold_name) {
   
   property_model <- str_extract(fold_name, "Model[1-4]")
-  
   stopifnot(!is.na(property_model))
   
   list(property_value_var = paste0("property_value_", property_model),
        standard_property_value_var = paste0("standard_property_value_", property_model))
+  
 }
 
 decompose_models <- function(model_set,
@@ -3041,52 +3043,95 @@ decompose_models <- function(model_set,
     
     if (combined) {
       
-      lot_data <- prepare_type(dataset_properties_standardized, "Lot sale")
-      property_data <- prepare_type(dataset_properties, "Property sale")
-      standard_property_data <- prepare_type(dataset_properties_standardized, "Property sale")
+      lot_value <- predict.gam(model,
+                               newdata = prepare_type(dataset_properties_standardized, "Lot sale"),
+                               type = "response") %>% 
+                   as.vector()
       
-      lot_value <- predict.gam(model, lot_data, type = "response") %>% as.vector()
-      property_value <- predict.gam(model, property_data, type = "response") %>% as.vector()
-      standard_property_value <- predict.gam(model, standard_property_data, type = "response") %>% as.vector()
+      property_value <- predict.gam(model,
+                                    newdata = prepare_type(dataset_properties, "Property sale"),
+                                    type = "response") %>% 
+                        as.vector()
+      
+      standard_property_value <- predict.gam(model,
+                                             newdata = prepare_type(dataset_properties_standardized, "Property sale"),
+                                             type = "response") %>% 
+                                 as.vector()
       
     } else {
       
       vars <- get_property_value_vars(fold_name)
       
-      lot_value <- predict.gam(model, dataset_properties, type = "response") %>% as.vector()
+      lot_value <- predict.gam(model,
+                               newdata = dataset_properties,
+                               type = "response") %>% 
+                   as.vector()
+      
       property_value <- dataset_properties[[vars$property_value_var]]
       standard_property_value <- dataset_properties[[vars$standard_property_value_var]]
+      
     }
+    
+    building_value <- property_value - lot_value
+    standard_building_value <- standard_property_value - lot_value
     
     tibble(id = dataset_properties$id,
            property_value = property_value,
            standard_property_value = standard_property_value,
            lot_value = lot_value,
-           building_value = property_value - lot_value,
-           standard_building_value = standard_property_value - lot_value,
+           building_value = building_value,
+           standard_building_value = standard_building_value,
+           building_share = building_value / property_value,
+           standard_building_share = standard_building_value / standard_property_value,
+           building_value_per_m2 = building_value / dataset_properties$living_space,
+           standard_building_value_per_m2 = standard_building_value / 140,
            living_space = dataset_properties$living_space,
            year_built = dataset_properties$year_built)
+    
   })
 }
 
-make_median_text <- function(df) {
+
+summarise_value <- function(x, prefix) {
   
-  vars <- c(property_value = "Property",
-            standard_property_value = "Standard property",
-            lot_value = "Lot",
-            building_value = "Building",
-            standard_building_value = "Standard building")
+  tibble(!!paste0(prefix, "_mean") := mean(x, na.rm = TRUE),
+         !!paste0(prefix, "_median") := median(x, na.rm = TRUE),
+         !!paste0(prefix, "_sd") := sd(x, na.rm = TRUE),
+         !!paste0(prefix, "_mad") := mad(x, na.rm = TRUE),
+         !!paste0(prefix, "_iqr") := IQR(x, na.rm = TRUE),
+         !!paste0(prefix, "_q05") := quantile(x, 0.05, na.rm = TRUE),
+         !!paste0(prefix, "_q10") := quantile(x, 0.10, na.rm = TRUE),
+         !!paste0(prefix, "_q25") := quantile(x, 0.25, na.rm = TRUE),
+         !!paste0(prefix, "_q75") := quantile(x, 0.75, na.rm = TRUE),
+         !!paste0(prefix, "_q90") := quantile(x, 0.90, na.rm = TRUE),
+         !!paste0(prefix, "_q95") := quantile(x, 0.95, na.rm = TRUE),
+         !!paste0(prefix, "_min") := min(x, na.rm = TRUE),
+         !!paste0(prefix, "_max") := max(x, na.rm = TRUE),
+         !!paste0(prefix, "_n_negative") := sum(x < 0, na.rm = TRUE),
+         !!paste0(prefix, "_share_negative") := mean(x < 0, na.rm = TRUE) * 100)
+}
+
+summarise_decomposition <- function(df) {
   
-  map2_chr(names(vars), vars, function(var, label) {paste0(label, ": ", round(median(df[[var]], na.rm = TRUE) / 1e6, 2), "M")}) %>%
-  paste(collapse = "\n")
-  
+  bind_cols(tibble(n = nrow(df)),
+            summarise_value(df$property_value, "property_value"),
+            summarise_value(df$standard_property_value, "standard_property_value"),
+            summarise_value(df$lot_value, "lot_value"),
+            summarise_value(df$building_value, "building_value"),
+            summarise_value(df$standard_building_value, "standard_building_value"),
+            summarise_value(df$building_share, "building_share"),
+            summarise_value(df$standard_building_share, "standard_building_share"),
+            summarise_value(df$building_value_per_m2, "building_value_per_m2"),
+            summarise_value(df$standard_building_value_per_m2, "standard_building_value_per_m2"))
 }
 
 density_layer <- function(df, var, label) {
   
   df_layer <- df %>%
               transmute(value = .data[[var]] / 1e6) %>%
-              filter(!is.na(value), value >= x_limits[1], value <= x_limits[2])
+              filter(is.finite(value),
+                     value >= x_limits[1],
+                     value <= x_limits[2])
   
   geom_density(data = df_layer,
                mapping = aes(x = value, color = label, fill = label),
@@ -3096,45 +3141,21 @@ density_layer <- function(df, var, label) {
                na.rm = TRUE)
 }
 
-make_density_plot <- function(df, model_approach, fold_name, neg_summary) {
+make_density_plot <- function(df, model_approach, fold_name) {
   
-  neg_row <- neg_summary %>%
-             filter(model_approach == !!model_approach,
-                    fold_name == !!fold_name)
-  
-  subtitle <- paste0("Negative building values: ", 
-                     neg_row$negative_building_values,
-                     " (",
-                     round(neg_row$share_negative_building_values, 1),
-                     "%); negative standard building values: ",
-                     neg_row$negative_standard_building_values,
-                     " (",
-                     round(neg_row$share_negative_standard_building_values, 1),
-                     "%)")
-  
-  ggplot() +
-  density_layer(df, "property_value", "Property value") +
-  density_layer(df, "standard_property_value", "Standard property value") +
-  density_layer(df, "lot_value", "Lot value") +
-  density_layer(df, "building_value", "Building value") +
-  density_layer(df, "standard_building_value", "Standard building value") +
-  coord_cartesian(xlim = x_limits) +
-  scale_x_continuous(labels = label_number(suffix = "M")) +
-  scale_color_discrete(name = NULL) +
-  scale_fill_discrete(name = NULL) +
-  labs(title = paste(model_approach, "-", fold_name),
-       subtitle = subtitle,
-       x = "Value [million DKK]",
-       y = "Density") +
-  annotate("text",
-           x = x_limits[1] + 0.55 * diff(x_limits),
-           y = Inf,
-           label = make_median_text(df),
-           hjust = 0,
-           vjust = 1.1,
-           size = 3.5) +
-  theme_minimal()
-  
+  ggplot() + density_layer(df, "property_value", "Property value") +
+             density_layer(df, "standard_property_value", "Standard property value") +
+             density_layer(df, "lot_value", "Lot value") +
+             density_layer(df, "building_value", "Building value") +
+             density_layer(df, "standard_building_value", "Standard building value") +
+             coord_cartesian(xlim = x_limits) +
+             scale_x_continuous(labels = label_number(suffix = "M")) +
+             scale_color_discrete(name = NULL) +
+             scale_fill_discrete(name = NULL) +
+             labs(title = paste(model_approach, "-", fold_name),
+                  x = "Value [million DKK]",
+                  y = "Density") +
+             theme_minimal()
 }
 
 # -------------------------
@@ -3147,43 +3168,88 @@ if (load) {
   
 } else {
   
-  property_decomposition <- list(direct_lot_model = decompose_models(model_sets$direct_lot_model,
-                                                                     dataset_properties,
-                                                                     dataset_properties_standardized,
-                                                                     combined = FALSE),
-                                 standard_property_model = decompose_models(model_sets$standard_property_model,
-                                                                            dataset_properties,
-                                                                            dataset_properties_standardized,
-                                                                            combined = FALSE),
-                                 combined_model = decompose_models(model_sets$combined_model,
-                                                                   dataset_properties,
-                                                                   dataset_properties_standardized,
-                                                                   combined = TRUE)
+  property_decomposition <- list(
+    direct_lot_model = decompose_models(
+      model_set = model_sets$direct_lot_model,
+      dataset_properties = dataset_properties,
+      dataset_properties_standardized = dataset_properties_standardized,
+      combined = FALSE
+    ),
+    standard_property_model = decompose_models(
+      model_set = model_sets$standard_property_model,
+      dataset_properties = dataset_properties,
+      dataset_properties_standardized = dataset_properties_standardized,
+      combined = FALSE
+    ),
+    combined_model = decompose_models(
+      model_set = model_sets$combined_model,
+      dataset_properties = dataset_properties,
+      dataset_properties_standardized = dataset_properties_standardized,
+      combined = TRUE
+    )
   )
   
   saveRDS(property_decomposition, "saved_files/property_decomposition.rds")
 }
 
 # -------------------------
-# Negative building summary
+# Decomposition summary
 # -------------------------
 
-negative_building_summary <- imap_dfr(
+decomposition_summary <- imap_dfr(
   property_decomposition,
   function(model_set, model_approach) {
+    
     imap_dfr(model_set, function(df, fold_name) {
-      tibble(model_approach = model_approach,
-             fold_name = fold_name,
-             n = nrow(df),
-             negative_building_values = sum(df$building_value < 0, na.rm = TRUE),
-             negative_standard_building_values = sum(df$standard_building_value < 0, na.rm = TRUE),
-             share_negative_building_values = mean(df$building_value < 0, na.rm = TRUE) * 100,
-             share_negative_standard_building_values = mean(df$standard_building_value < 0, na.rm = TRUE) * 100)
+      
+      summarise_decomposition(df) %>%
+        mutate(
+          model_approach = model_approach,
+          fold_name = fold_name,
+          .before = 1
+        )
     })
   }
 )
 
-saveRDS(negative_building_summary, "saved_files/negative_building_summary.rds")
+saveRDS(decomposition_summary, "saved_files/decomposition_summary.rds")
+
+# -------------------------
+# Compact building-value summary
+# -------------------------
+
+building_value_summary <- decomposition_summary %>%
+                          select(model_approach,
+                                 fold_name,
+                                 n,
+                              
+                                 building_value_median,
+                                 building_value_iqr,
+                                 building_value_mad,
+                                 building_value_q10,
+                                 building_value_q90,
+                                 building_value_n_negative,
+                                 building_value_share_negative,
+                                
+                                 standard_building_value_median,
+                                 standard_building_value_iqr,
+                                 standard_building_value_mad,
+                                 standard_building_value_q10,
+                                 standard_building_value_q90,
+                                 standard_building_value_n_negative,
+                                 standard_building_value_share_negative,
+                                
+                                 building_share_median,
+                                 building_share_iqr,
+                                 standard_building_share_median,
+                                 standard_building_share_iqr,
+                                
+                                 building_value_per_m2_median,
+                                 building_value_per_m2_iqr,
+                                 standard_building_value_per_m2_median,
+                                 standard_building_value_per_m2_iqr)
+
+saveRDS(building_value_summary, "saved_files/building_value_summary.rds")
 
 # -------------------------
 # Density plots
@@ -3192,11 +3258,18 @@ saveRDS(negative_building_summary, "saved_files/negative_building_summary.rds")
 plot_value_densities <- imap(
   property_decomposition,
   function(model_set, model_approach) {
-    imap(model_set, function(df, fold_name) {make_density_plot(df, model_approach, fold_name, negative_building_summary)})
+    
+    imap(
+      model_set,
+      function(df, fold_name) {
+        make_density_plot(df, model_approach, fold_name)
+      }
+    )
   }
 )
 
 saveRDS(plot_value_densities, "saved_files/plot_value_densities.rds")
+
 
 # -------------------------
 # Building diagnostics
@@ -3205,7 +3278,9 @@ saveRDS(plot_value_densities, "saved_files/plot_value_densities.rds")
 building_diagnostics_long <- imap_dfr(
   property_decomposition,
   function(model_set, model_approach) {
+    
     imap_dfr(model_set, function(df, fold_name) {
+      
       df %>% mutate(model_approach = model_approach,
                     fold_name = fold_name,
                     building_value_million = building_value / 1e6,
@@ -3216,17 +3291,17 @@ building_diagnostics_long <- imap_dfr(
 
 saveRDS(building_diagnostics_long, "saved_files/building_diagnostics_long.rds")
 
-# -------------------------
-# Diagnostic plot helper
-# -------------------------
-
 make_building_diagnostic_plot <- function(x_var, x_label, x_limits_plot) {
-
-  ggplot(building_diagnostics_long %>%
-         filter(.data[[x_var]] >= x_limits_plot[1],
-                .data[[x_var]] <= x_limits_plot[2],
-                building_value_million >= building_value_limits[1],
-                building_value_million <= building_value_limits[2]),
+  
+  plot_df <- building_diagnostics_long %>%
+             filter(is.finite(.data[[x_var]]),
+                    is.finite(building_value_million),
+                    .data[[x_var]] >= x_limits_plot[1],
+                    .data[[x_var]] <= x_limits_plot[2],
+                    building_value_million >= building_value_limits[1],
+                    building_value_million <= building_value_limits[2])
+  
+  ggplot(plot_df,
          aes(x = .data[[x_var]],
              y = building_value_million,
              color = model_approach,
@@ -3242,14 +3317,37 @@ make_building_diagnostic_plot <- function(x_var, x_label, x_limits_plot) {
          theme_minimal()
 }
 
-plot_building_value_living_space <- make_building_diagnostic_plot("living_space", "Living space [m²]", living_space_limits)
-plot_building_value_year_built <- make_building_diagnostic_plot("year_built", "Year built", year_built_limits)
+plot_building_value_living_space <- make_building_diagnostic_plot(x_var = "living_space",
+                                                                  x_label = "Living space [m²]",
+                                                                  x_limits_plot = living_space_limits)
 
-saveRDS(plot_building_value_living_space, "saved_files/plot_building_value_living_space.rds")
+plot_building_value_year_built <- make_building_diagnostic_plot(x_var = "year_built",
+                                                                x_label = "Year built",
+                                                                x_limits_plot = year_built_limits)
+
+saveRDS(plot_building_value_living_space,"saved_files/plot_building_value_living_space.rds") 
+
 saveRDS(plot_building_value_year_built, "saved_files/plot_building_value_year_built.rds")
 
 print(plot_building_value_living_space)
 print(plot_building_value_year_built)
+```
+
+
+```{r Plot distributions property building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+
+# -------------------------
+# Combined density figure
+# -------------------------
+
+plot_value_densities_combined <- wrap_plots(flatten(plot_value_densities), ncol = 2) +
+                                 plot_layout(guides = "collect") &
+                                 theme(legend.position = "bottom",
+                                       legend.box = "horizontal")
+
+saveRDS(plot_value_densities_combined, "saved_files/plot_value_densities_combined.rds")
+
+print(plot_value_densities_combined)
 ```
 
 
