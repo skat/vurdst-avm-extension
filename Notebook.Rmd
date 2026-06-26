@@ -1693,8 +1693,7 @@ saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
 performance_basis <- residual_df_basis %>%
                      mutate(type = if_else(validation, "Validation error", "Training error")) %>%
                      group_by(type, municipality_type, value) %>%
-                     summarise(MALE = mean(abs(residual_sales_price_log)),
-                               .groups = "drop") %>%
+                     summarise(MALE = mean(abs(residual_sales_price_log)), .groups = "drop") %>%
                      rename(k = value)
 
 plot_basis <- ggplot(performance_basis,
