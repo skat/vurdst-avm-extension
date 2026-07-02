@@ -202,9 +202,9 @@ Her gennemgås step-by-step processen til at generere det endelige datasæt anve
 
 if (load) {
   
-  ejendomssalg <- readRDS("saved_files/ejendomssalg_ny.rds")
-  vurderingsejendomme <- readRDS("saved_files/vurderingsejendomme_ny.rds")
-  grundsalg <- readRDS("saved_files/grundsalg_ny.rds")
+  ejendomssalg <- readRDS("saved_files/ejendomssalg.rds")
+  vurderingsejendomme <- readRDS("saved_files/vurderingsejendomme.rds")
+  grundsalg <- readRDS("saved_files/grundsalg.rds")
   
 } else {
   
@@ -386,14 +386,14 @@ if (load) {
                   distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, salg.koebsdato, .keep_all = TRUE) %>%
                   select(any_of(variable))
   
-  saveRDS(ejendomssalg, "saved_files/ejendomssalg_ny.rds")
+  saveRDS(ejendomssalg, "saved_files/ejendomssalg.rds")
   
   #saml grundsalg og select relevante felter
   grundsalg <- bind_rows(grundsalg_2020, grundsalg_2024) %>%
                distinct(vurinfo.vurderingsejendom_id, delgrund.delgrund_ids, salg.koebsdato, .keep_all = TRUE) %>% 
                select(any_of(variable))
   
-  saveRDS(grundsalg, "saved_files/grundsalg_ny.rds")
+  saveRDS(grundsalg, "saved_files/grundsalg.rds")
 
   rm(ejendomssalg_2020, ejendomssalg_2024, ejendomssalg, grundsalg)
   gc()
@@ -405,7 +405,7 @@ if (load) {
 
   vurderingsejendomme <- process_vurderingsejendomme(path = "/data/data/premodeldataflow/20250601_vuraar2024/", variable = variable)
 
-  saveRDS(vurderingsejendomme, "saved_files/vurderingsejendomme_ny.rds")
+  saveRDS(vurderingsejendomme, "saved_files/vurderingsejendomme.rds")
 
   rm(vurderingsejendomme)
   gc()
@@ -477,7 +477,7 @@ vurderingsejendomme <- left_join(vurderingsejendomme, kommunegrupper, by = "komm
 ## 4. Udvælg PCL
 
 
-```{r PCL,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r PCL, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 #Kun én vurderingsejendom, enhed, delgrund og bygning  
 ejendomssalg <- ejendomssalg %>%

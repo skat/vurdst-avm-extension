@@ -1476,12 +1476,10 @@ collapse_concurvity <- function(conc_mat, pretty_names) {
   uniq_terms <- unique(base_names)
   
   # prepare new collapsed matrix
-  conc_grouped <- matrix(
-    NA_real_,
-    nrow = length(uniq_terms),
-    ncol = length(uniq_terms),
-    dimnames = list(uniq_terms, uniq_terms)
-  )
+  conc_grouped <- matrix(NA_real_,
+                         nrow = length(uniq_terms),
+                         ncol = length(uniq_terms),
+                         dimnames = list(uniq_terms, uniq_terms))
   
   # fill blocks
   for (i in seq_along(uniq_terms)) {
@@ -1769,9 +1767,6 @@ if (load) {
   saveRDS(dataset_properties_standardized, "saved_files/dataset_properties_standardized.rds")
 
 }
-
-
-
 
 ```
 
@@ -2841,8 +2836,9 @@ model_sets <- list("Direct lot model" = models_direct,
 # 2. Prepare prediction datasets
 # -------------------------
 
-dataset_properties_combined_lot <- dataset_properties_standardized %>% mutate(type = factor("Lot sale", levels = c("Lot sale", "Property sale")),
-                                                                              type_ordered = ordered("Lot sale", levels = c("Lot sale", "Property sale")))
+dataset_properties_combined_lot <- dataset_properties_standardized %>% 
+                                   mutate(type = factor("Lot sale", levels = c("Lot sale", "Property sale")),
+                                          type_ordered = ordered("Lot sale", levels = c("Lot sale", "Property sale")))
 
 prediction_datasets <- list("Direct lot model" = dataset_properties,
                             "Standard property model" = dataset_properties,
@@ -2905,6 +2901,7 @@ spread_long <- imap_dfr(
   function(df, model_approach) {
     
     df %>% transmute(model_approach = model_approach, sigma_Ensemble = sigma_Ensemble)
+    
   }
 )
 
@@ -3333,6 +3330,7 @@ print(plot_building_value_year_built)
 ```
 
 
+
 ```{r Plot distributions property building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 # -------------------------
@@ -3349,6 +3347,286 @@ saveRDS(plot_value_densities_combined, "saved_files/plot_value_densities_combine
 print(plot_value_densities_combined)
 ```
 
+
+
+```{r Sensitivity to standard house parameters, eval=TRUE, echo=TRUE, warning=FALSE}
+
+# -------------------------
+# Sensitivity analysis: standard-house specification
+# -------------------------
+
+# -------------------------
+# 1. Settings
+# -------------------------
+
+sensitivity_dir <- "saved_files/standard_house_sensitivity"
+
+if (!dir.exists(sensitivity_dir)) {dir.create(sensitivity_dir, recursive = TRUE)}
+
+standard_house_specs <- list(
+  
+  reference_140_1970 = list(year_built = 1970,
+                            year_rebuilt = 1970,
+                            living_space = 140,
+                            lot_size = 800,
+                            maximum_coverage_percentage = 30,
+                            unused_floor_area = 0,
+                            number_of_divisions = 1,
+                            number_of_bathrooms = 1,
+                            house_type = "Detached",
+                            roof_type = "Fiber cement",
+                            wall_type = "Brick",
+                            heating_type = "District heating"),
+  
+  small_100_1970 = list(year_built = 1970,
+                        year_rebuilt = 1970,
+                        living_space = 100,
+                        lot_size = 800,
+                        maximum_coverage_percentage = 30,
+                        unused_floor_area = 0,
+                        number_of_divisions = 1,
+                        number_of_bathrooms = 1,
+                        house_type = "Detached",
+                        roof_type = "Fiber cement",
+                        wall_type = "Brick",
+                        heating_type = "District heating"),
+  
+  large_180_1970 = list(year_built = 1970,
+                        year_rebuilt = 1970,
+                        living_space = 180,
+                        lot_size = 800,
+                        maximum_coverage_percentage = 30,
+                        unused_floor_area = 0,
+                        number_of_divisions = 1,
+                        number_of_bathrooms = 1,
+                        house_type = "Detached",
+                        roof_type = "Fiber cement",
+                        wall_type = "Brick",
+                        heating_type = "District heating"),
+  
+  newer_140_2000 = list(year_built = 2000,
+                        year_rebuilt = 2000,
+                        living_space = 140,
+                        lot_size = 800,
+                        maximum_coverage_percentage = 30,
+                        unused_floor_area = 0,
+                        number_of_divisions = 1,
+                        number_of_bathrooms = 1,
+                        house_type = "Detached",
+                        roof_type = "Fiber cement",
+                        wall_type = "Brick",
+                        heating_type = "District heating"),
+  
+  older_140_1950 = list(year_built = 1950,
+                        year_rebuilt = 1970,
+                        living_space = 140,
+                        lot_size = 800,
+                        maximum_coverage_percentage = 30,
+                        unused_floor_area = 0,
+                        number_of_divisions = 1,
+                        number_of_bathrooms = 1,
+                        house_type = "Detached",
+                        roof_type = "Fiber cement",
+                        wall_type = "Brick",
+                        heating_type = "District heating")
+  
+)
+
+# -------------------------
+# 2. Standardization helper
+# -------------------------
+
+standardize_property_spec <- function(data, reference_data, spec) {
+  
+  data %>% mutate(year_built = spec$year_built,
+                  year_rebuilt = spec$year_rebuilt,
+                  living_space = spec$living_space,
+                  lot_size = spec$lot_size,
+                  maximum_coverage_percentage = spec$maximum_coverage_percentage,
+                  unused_floor_area = spec$unused_floor_area,
+                  number_of_divisions = spec$number_of_divisions,
+                  number_of_bathrooms = spec$number_of_bathrooms,
+                  house_type = factor(spec$house_type, levels = levels(factor(reference_data$house_type))),
+                  roof_type = factor(spec$roof_type, levels = levels(factor(reference_data$roof_type))),
+                  wall_type = factor(spec$wall_type, levels = levels(factor(reference_data$wall_type))),
+                  heating_type = factor(spec$heating_type, levels = levels(factor(reference_data$heating_type))))
+  
+}
+
+restore_lot_variables <- function(standardized_lot_data, original_lot_data) {
+  
+  standardized_lot_data %>% mutate(lot_size = original_lot_data$lot_size,
+                                   maximum_coverage_percentage = original_lot_data$maximum_coverage_percentage,
+                                   unused_floor_area = original_lot_data$unused_floor_area,
+                                   number_of_divisions = original_lot_data$number_of_divisions)
+  
+}
+
+prepare_sensitivity_datasets <- function(spec_name,
+                                         spec,
+                                         property_models,
+                                         dataset_lot_sales_cv,
+                                         dataset_properties,
+                                         reference_data) {
+  
+  message("Preparing standardized datasets for ", spec_name, " ...")
+  
+  dataset_lot_sales_cv_standardized_spec <- standardize_property_spec(data = dataset_lot_sales_cv,
+                                                                      reference_data = reference_data,
+                                                                      spec = spec)
+  
+  dataset_properties_standardized_spec <- standardize_property_spec(data = dataset_properties,
+                                                                    reference_data = reference_data,
+                                                                    spec = spec)
+  
+  for (model_name in names(property_models)) {
+    
+    dataset_lot_sales_cv_standardized_spec[[paste0("standard_property_value_", model_name)]] <- as.vector(
+      predict.gam(property_models[[model_name]], newdata = dataset_lot_sales_cv_standardized_spec, type = "response")
+      )
+    
+    dataset_properties_standardized_spec[[paste0("standard_property_value_", model_name)]] <- as.vector(
+      predict.gam(property_models[[model_name]], newdata = dataset_properties_standardized_spec, type = "response")
+      )
+  }
+  
+  dataset_lot_sales_cv_standardized_spec <- restore_lot_variables(standardized_lot_data = dataset_lot_sales_cv_standardized_spec,
+                                                                  original_lot_data = dataset_lot_sales_cv)
+  
+  list(lot_sales_standardized = dataset_lot_sales_cv_standardized_spec,
+       properties_standardized = dataset_properties_standardized_spec)
+  
+}
+
+# -------------------------
+# 3. Model-fitting helpers
+# -------------------------
+
+fit_standard_property_fold_sensitivity <- function(fold, data, k_spatial) {
+  
+  training_subset <- data %>% filter(validation_set != fold)
+  
+  standard_property_var <- paste0("standard_property_value_Model", fold)
+  
+  formula_standard_property <- as.formula(paste0("sales_price ~ ",
+                                                 "s(", standard_property_var, ", k = 10) + ",
+                                                 "s(lot_size, k = 6, pc = 800) + ",
+                                                 "s(maximum_coverage_percentage, k = 3, pc = 30) + ",
+                                                 "s(number_of_divisions, k = 3, pc = 1) + ",
+                                                 "s(coordinate_east, coordinate_north, k = ", k_spatial,
+                                                 ", pc = c(697000, 6150000))"))
+  
+  bam(formula_standard_property,
+      data = training_subset,
+      family = tw(link = log),
+      method = "fREML")
+  
+}
+
+fit_combined_fold_sensitivity <- function(fold,
+                                          lot_data,
+                                          property_data,
+                                          k_spatial,
+                                          k_other = 10) {
+  
+  lot_train <- lot_data %>% filter(validation_set != fold)
+  
+  property_train <- property_data %>% filter(validation_set != fold)
+  
+  training_subset <- bind_rows(lot_train, property_train)
+  
+  bam(sales_price ~
+      s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+      s(coordinate_east, coordinate_north, k = k_spatial, by = type_ordered, pc = c(697000, 6150000)) +
+      s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
+      s(year_built, k = k_other, by = municipality_type, pc = 1970) +
+      s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
+      s(living_space, k = k_other, by = municipality_type, pc = 140) +
+      s(lot_size, k = k_other, by = municipality_type, pc = 800) +
+      s(coast_distance, k = k_other, pc = 1500) +
+      s(lake_distance, k = k_other, pc = 500) +
+      s(stream_distance, k = k_other, pc = 1000) +
+      s(road_distance, k = k_other, pc = 2000) +
+      s(highway_distance, k = k_other, pc = 2000) +
+      s(train_station_distance, k = k_other, pc = 2000) +
+      s(railway_distance, k = k_other, pc = 1000) +
+      s(windturbine_distance, k = k_other, pc = 3000) +
+      s(ocean_view, k = k_other, pc = 0) +
+      s(lake_view, k = k_other, pc = 0) +
+      s(forest_size, k = k_other, pc = 0) +
+      s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
+      house_type * municipality_type +
+      roof_type * municipality_type +
+      wall_type * municipality_type +
+      heating_type * municipality_type +
+      type,
+      data = training_subset,
+      chunk.size = nrow(training_subset),
+      family = tw(link = log),
+      method = "fREML")
+  
+}
+
+fit_model_set_sensitivity <- function(fit_fun, N, ...) {
+  
+  models <- future_lapply(seq_len(N), function(fold) {
+    message("Fitting fold ", fold, " ...")
+    fit_fun(fold = fold, ...)
+  })
+  
+  names(models) <- paste0("Model", seq_len(N))
+  models
+}
+
+# -------------------------
+# 4. Run sensitivity analysis
+# -------------------------
+
+if (load) {
+  
+  sensitivity_results <- readRDS(file.path(sensitivity_dir, "sensitivity_results.rds"))
+  
+} else {
+  
+  sensitivity_results <- imap(standard_house_specs,
+                              
+    function(spec, spec_name) {
+      
+      message("Running standard-house sensitivity: ", spec_name)
+      
+      datasets_spec <- prepare_sensitivity_datasets(spec_name = spec_name,
+                                                    spec = spec,
+                                                    property_models = models,
+                                                    dataset_lot_sales_cv = dataset_lot_sales_cv,
+                                                    dataset_properties = dataset_properties,
+                                                    reference_data = dataset)
+      
+      models_standard_property_spec <- fit_model_set_sensitivity(fit_fun = fit_standard_property_fold_sensitivity,
+                                                                 N = N,
+                                                                 data = datasets_spec$lot_sales_standardized,
+                                                                 k_spatial = k_spatial)
+      
+      models_combined_spec <- fit_model_set_sensitivity(fit_fun = fit_combined_fold_sensitivity,
+                                                        N = N,
+                                                        lot_data = datasets_spec$lot_sales_standardized,
+                                                        property_data = dataset_property_sales_cv,
+                                                        k_spatial = k_spatial,
+                                                        k_other = k_other)
+      
+      list(spec = spec,
+           datasets = datasets_spec,
+           models_standard_property = models_standard_property_spec,
+           models_combined = models_combined_spec)
+      
+    }
+  )
+  
+  saveRDS(sensitivity_results, file.path(sensitivity_dir, "sensitivity_results.rds"))
+  
+}
+
+
+```
 
 
 ```{r Model interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
@@ -3555,9 +3833,6 @@ results_all_models <- bind_rows(
 saveRDS(results_all_models, "saved_files/results_interpretation_combined_models.rds")
 
 ```
-
-
-
 
 
 # Paper III: Other approaches 
