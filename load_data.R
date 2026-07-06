@@ -77,9 +77,9 @@ chunks <- list.files(path = "/data/data/premodeldataflow/20250613_vuraar2020//",
                      full.names = TRUE)
 
 
-markedsdata <- furrr::future_map_dfr(chunks,
-                                     function(x) x %>%
-                                     indlaes_vurderingsejendomme(trim = TRUE, salgsdata = TRUE))
+markedsdata <- future_map_dfr(chunks,
+                              function(x) x %>%
+                              indlaes_vurderingsejendomme(trim = TRUE, salgsdata = TRUE))
 
 enheder <- udtraek_nestede_elementer(data = markedsdata,
                                      list_col = "vurderingsenheder",
@@ -155,9 +155,9 @@ chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024//",
                      full.names = TRUE)
 
 
-markedsdata <- furrr::future_map_dfr(chunks,
-                                     function(x) x %>%
-                                     indlaes_vurderingsejendomme(trim = TRUE, salgsdata = TRUE))
+markedsdata <- future_map_dfr(chunks,
+                              function(x) x %>%
+                              indlaes_vurderingsejendomme(trim = TRUE, salgsdata = TRUE))
 
 
 enheder <- udtraek_nestede_elementer(data = markedsdata,
