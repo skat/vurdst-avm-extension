@@ -28,16 +28,13 @@
 #
 # The script saves three data sets:
 #
-#   - vurderingsejendomme.rds:
-#       Danish properties as of 1 January 2024.
+#   - vurderingsejendomme.rds: Danish properties as of 1 January 2024.
 #
-#   - ejendomssalg.rds:
-#       Danish property sales from 1 January 2014 to 1 January 2024.
+#   - ejendomssalg.rds: Danish property sales from 1 January 2014 to 1 January 2024.
 #
-#   - grundsalg.rds:
-#       Danish lot sales from 1 January 2014 to 1 January 2024.
+#   - grundsalg.rds: Danish lot sales from 1 January 2014 to 1 January 2024.
 #
-# These files are included in the GitHub repository and are used as inputs for
+# These files have been preloaded and are included in the GitHub repository and are used as inputs for
 # the subsequent analysis.
 # =============================================================================
 
