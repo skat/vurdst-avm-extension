@@ -1,10 +1,53 @@
+# =============================================================================
+# Initial data extraction
+# =============================================================================
+#
+# This script performs the initial data extraction for the analysis.
+#
+# It loads the data deliveries received by Vurderingsstyrelsen. Each delivery
+# contains properties at a specific valuation date together with sales observed
+# during the preceding six years. The current analysis uses deliveries for
+# 1 January 2020 and 1 January 2024, so the combined sales population covers
+# the period from 1 January 2014 to 1 January 2024.
+#
+# The script extracts:
+#
+#   1. Danish properties as of 1 January 2024
+#   2. Danish property sales from 1 January 2014 to 1 January 2024
+#   3. Danish lot sales from 1 January 2014 to 1 January 2024
+#
+# Properties, property sales, and lot sales are extracted using internal
+# Vurderingsstyrelsen helper functions. The resulting data sets are restricted
+# to the variables needed for the subsequent analysis. Duplicate sales arising
+# from overlapping data deliveries are removed.
+#
+# For sales observations, view variables are updated using the corresponding
+# variables from the 2024 property data, which contains more up-to-date
+# information. Finally, all three data sets are enriched with selected
+# geographic variables.
+#
+# The script saves three data sets:
+#
+#   - vurderingsejendomme.rds:
+#       Danish properties as of 1 January 2024.
+#
+#   - ejendomssalg.rds:
+#       Danish property sales from 1 January 2014 to 1 January 2024.
+#
+#   - grundsalg.rds:
+#       Danish lot sales from 1 January 2014 to 1 January 2024.
+#
+# These files are included in the GitHub repository and are used as inputs for
+# the subsequent analysis.
+# =============================================================================
+
+if (!requireNamespace("konstant", quietly = TRUE)) {devtools::install(konstant_path, upgrade = "never")}
+if (!requireNamespace("core", quietly = TRUE)) {devtools::install(core_path, upgrade = "never")}
 library(dplyr)
 library(stringr)
 library(future)
 library(purrr)
 library(furrr)
-if (!requireNamespace("konstant", quietly = TRUE)) {devtools::install(konstant_path, upgrade = "never")}
-if (!requireNamespace("core", quietly = TRUE)) {devtools::install(core_path, upgrade = "never")}
 library(konstant)
 library(core)
 
