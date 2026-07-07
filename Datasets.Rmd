@@ -7,7 +7,7 @@ header-includes:
   - \usepackage{xcolor}
 ---
 
-```{r Load,  eval=TRUE, include=FALSE}
+```{r setup,  eval=TRUE, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(stringr)
@@ -21,11 +21,16 @@ grundsalg <- readRDS("grundsalg.rds")
 
 ```
 
-# Beskrivelse
-Her gennemgås step-by-step processen til at generere det endelige datasæt anvendt i modellerne. 
+## 1. Load datasets 
+
+```{r Load datasets, eval=TRUE, echo=TRUE, warning=FALSE}
+vurderingsejendomme <- readRDS("vurderingsejendomme.rds")
+ejendomssalg <- readRDS("ejendomssalg.rds")
+grundsalg <- readRDS("grundsalg.rds")
+```
 
 
-## 1. Single family houses 
+## 2. Single family houses 
 
 ```{r PCL, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -190,10 +195,7 @@ grundsalg_pcl <- grundsalg %>%
 
 ```
 
-
-
-## 2. Data cleaning
-
+## 3. Data cleaning
 
 ```{r Cleaning,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -375,7 +377,7 @@ stopifnot(nrow(grundsalg_pcl %>% distinct(deljordstykke.deljordstykke_id_ice, sa
 
 ```
 
-## 3. Final dataset
+## 4. Final dataset
 
 ```{r Dataset, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 #join data frames of property sales and valuation properties

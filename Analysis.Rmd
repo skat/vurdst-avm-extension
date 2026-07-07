@@ -49,9 +49,6 @@ load <- FALSE # determines whether or not to preload models in the various chunk
 plan(multisession, workers = N) #do as much as possible in parallel
 options(future.globals.maxSize = 10 * 1024^3) #increase maxSize for future to handle large models
 
-#External files
-coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
-
 #Create a saved files folder and checkpoints folder is these do not already exist
 for (f in c("saved_files", "checkpoints")) {
   if (!dir.exists(f)) {
@@ -75,6 +72,9 @@ This notebook provides a walkthrough of the analysis and results described in se
 The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from the period 01/01/2014-01/01/2024. The dataset, included as a .rds file in this repository, is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE}
+
+#Externally defined coordinate grid of Denmark
+coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
 
 dataset <- readRDS("dataset.rds")
 #The three types included in the dataset. This notebook only uses Property and Property Sales
