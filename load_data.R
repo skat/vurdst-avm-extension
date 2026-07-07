@@ -21,9 +21,9 @@
 # to the variables needed for the subsequent analysis. Duplicate sales arising
 # from overlapping data deliveries are removed.
 #
-# For sales observations, view variables are updated using the corresponding
+# For sales observations the data is enriched with a list of sales flag, which indicate the type of sale and the view over ocean and lake variables are furthermore updated using the corresponding
 # variables from the 2024 property data, which contains more up-to-date
-# information. Finally, all three data sets are enriched with selected
+# information. Lastly, all three data sets are enriched with selected
 # geographic variables.
 #
 # The script saves three data sets:

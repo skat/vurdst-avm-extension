@@ -60,7 +60,6 @@ for (f in c("saved_files", "checkpoints")) {
 }
 ```
 
-# Introduction
 This notebook provides a walkthrough of the analysis and results described in severals papers, which as of June 2026 are: 
 
 1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System"
