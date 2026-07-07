@@ -8,6 +8,96 @@ if (!requireNamespace("core", quietly = TRUE)) {devtools::install(core_path, upg
 library(konstant)
 library(core)
 
+variable <- c("salg_id_ice",
+              "vurderingsejendom_id_ice",
+              "delgrund.delgrund_ids",
+              "enhed.enhed_id_ice",
+              "df_virkningstid",
+              "region_nr",
+              "region_navn",
+              "landsdel_nr",
+              "landsdel_navn",
+              "kommune_navn",
+              "kommunetype",
+              "salg.koebsdato",
+              "salg.ialtkoebesum",
+              "salg.ejendomkategori",
+              "salg_flag",
+              "salg.anmeldelseidentifikator",
+              "salg.flereejendommeindikator",
+              "salg.ubebyggetgrund",
+              "salg.bygningsforholdkode",
+              "delgrund.registeret_areal_uden_vej",
+              "delgrund.arealberegnet",
+              "delgrund.beskyttelseslinier_andel",
+              "delgrund.alle_bygninger_paa_delgrunden",
+              "delgrund.alle_deljordstykke_id_ices",
+              "delgrund.samlet_landzoneareal",
+              "delgrund.samlet_byzoneareal",
+              "delgrund.samlet_sommerhuszoneareal",
+              "delgrund.samlet_udenzoneareal",
+              "delgrund.enheder_per_delgrund",
+              "delgrund.jordstykker_per_delgrund",
+              "delgrund.deljordstykker_per_delgrund",
+              "delgrund.zone",
+              "delgrund.unikke_plananvendelser",
+              "bygning.bygning_id_ice",
+              "bygning.opfoerelsesaar",
+              "bygning.omtilbygningsaar",
+              "bygning.tagdaekningsmateriale",
+              "bygning.supltagdaekningsmateriale",
+              "bygning.ydervaeggensmateriale",
+              "bygning.suplydervaeggensmateriale",
+              "bygning.varmeinstallation",
+              "bygning.supplerendevarme",
+              "bygning.bygningsanvendelse",
+              "bygning.samlet_boligareal",
+              "bygning.samletbygningsareal",
+              "bygning.samlet_erhvervsareal",
+              "bygning.andetareal",
+              "bygning.antal_etager",
+              "bygning.bebyggetareal",
+              "bygning.ejerforholdskode",
+              "vurinfo.vurderingsejendom_id",
+              "vurinfo.kommunenummer",
+              "vurinfo.ejendomsnummer",
+              "vurinfo.adresse.koordinatoest",
+              "vurinfo.adresse.koordinatnord",
+              "vurinfo.registreretareal_fratrukket_vejareal",
+              "vurinfo.afstand_kyst",
+              "vurinfo.afstand_naermeste_trafikvejgennemfart_trafikfordeling",
+              "vurinfo.afstand_motorvej_motortrafikvej",
+              "vurinfo.afstand_stor_soe",
+              "vurinfo.areal_samlet_skov",
+              "vurinfo.afstand_jernbane_any",
+              "vurinfo.afstand_stort_vandloeb",
+              "vurinfo.afstand_vindmoelle_any",
+              "vurinfo.afstand_station_any",
+              "vurinfo.udsigtslaengde_hav",
+              "vurinfo.udsigtslaengde_soe",
+              "vurinfo.oe_beliggenhed",
+              "vurinfo.vurbenyttelseskode",
+              "vurinfo.antal_delgrunde",
+              "vurinfo.antal_enheder",
+              "vurinfo.antal_sfer",
+              "vurinfo.antal_bfer",
+              "enhed.areal_til_beboelse",
+              "enhed.areal_til_erhverv",
+              "enhed.andetareal",
+              "enhed.boligtype",
+              "enhed.enhedsanvendelse",
+              "enhed.antal_badevaerelser",
+              "enhed.antal_vaerelser",
+              "enhed.antal_vaerelser_til_erhverv",
+              "enhed.antal_vandskylledetoiletter",
+              "enhed.badeforhold",
+              "enhed.koekkenforhold",
+              "enhed.opvarmningsmiddel",
+              "enhed.varmeinstallation",
+              "enhed.toiletforhold",
+              "enhed.supplerendevarme",
+              "delgrund.deljordstykke")
+
 
 process_vurderingsejendomme_chunk <- function(file) {
 
@@ -46,7 +136,10 @@ process_vurderingsejendomme_chunk <- function(file) {
                                    subelement.x,
                                    subelement.y))
 
-  vurderingsejendomme <- left_join(x = vurderingsejendomme, y = vurinfo, by = c("vurderingsejendom_id_ice", "df_virkningstid"))
+  vurderingsejendomme <- left_join(x = vurderingsejendomme,
+                                   y = vurinfo,
+                                   by = c("vurderingsejendom_id_ice", "df_virkningstid")) %>%
+                         select(any_of(variable))
 
   rm(dat, enheder, delgrunde, vurinfo)
   gc()
@@ -54,16 +147,6 @@ process_vurderingsejendomme_chunk <- function(file) {
   vurderingsejendomme
 }
 
-process_vurderingsejendomme <- function(path) {
-
-  chunks <- list.files(path = path,
-                       pattern = "vurderingsejendomme.ndjson.xz",
-                       recursive = TRUE,
-                       full.names = TRUE)
-
-  future_map_dfr(chunks, process_vurderingsejendomme_chunk)
-
-}
 
 
 # -------------------------
@@ -232,19 +315,25 @@ grundsalg_2024 <- salg_2024 %>% filter(!(vurderingsejendom_id_ice %in% bygningsi
 
 #saml ejendomssalg og select relevante felter
 ejendomssalg <- bind_rows(ejendomssalg_2020, ejendomssalg_2024) %>%
-                distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, salg.koebsdato, .keep_all = TRUE)
+                distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, salg.koebsdato, .keep_all = TRUE) %>%
+                select(any_of(variable))
 
 #saml grundsalg og select relevante felter
 grundsalg <- bind_rows(grundsalg_2020, grundsalg_2024) %>%
-             distinct(vurinfo.vurderingsejendom_id, delgrund.delgrund_ids, salg.koebsdato, .keep_all = TRUE)
-
-
+             distinct(vurinfo.vurderingsejendom_id, delgrund.delgrund_ids, salg.koebsdato, .keep_all = TRUE) %>%
+             select(any_of(variable))
 
 # -------------------------
 # 2. Hent vurderingsejendomme
 # -------------------------
 
-vurderingsejendomme <- process_vurderingsejendomme(path = "/data/data/premodeldataflow/20250601_vuraar2024/")
+chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024/",
+                     pattern = "vurderingsejendomme.ndjson.xz",
+                     recursive = TRUE,
+                     full.names = TRUE)
+
+vurderingsejendomme <- future_map_dfr(chunks, process_vurderingsejendomme_chunk)
+
 
 # -------------------------
 # 3. Antag historik
