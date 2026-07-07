@@ -150,7 +150,7 @@ process_vurderingsejendomme_chunk <- function(file) {
 
 
 # -------------------------
-# 1. Hent ejendomssalg og grundsalg
+# 1. Load property and lot sales
 # -------------------------
 
 #2020
@@ -324,7 +324,7 @@ grundsalg <- bind_rows(grundsalg_2020, grundsalg_2024) %>%
              select(any_of(variable))
 
 # -------------------------
-# 2. Hent vurderingsejendomme
+# 2. Load properties
 # -------------------------
 
 chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024/",
@@ -336,7 +336,7 @@ vurderingsejendomme <- future_map_dfr(chunks, process_vurderingsejendomme_chunk)
 
 
 # -------------------------
-# 3. Antag historik
+# 3. Enrich view variables of sales with information from properties
 # -------------------------
 
 antag_historik <- TRUE
@@ -365,7 +365,7 @@ if (antag_historik){
 
 
 # -------------------------
-# 4. Tilfoej geovariable
+# 4. Add some geographic variables
 # -------------------------
 
 geo <- konstant::geo
@@ -381,7 +381,7 @@ vurderingsejendomme <- left_join(vurderingsejendomme, geo, by = "vurinfo.kommune
 vurderingsejendomme <- left_join(vurderingsejendomme, kommunegrupper, by = "kommune_navn")
 
 # -------------------------
-# 4. Gem datasaet
+# 4. Save data
 # -------------------------
 
 saveRDS(ejendomssalg, "ejendomssalg.rds")
