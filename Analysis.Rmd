@@ -1,7 +1,7 @@
 ---
-title: "Supplementary Notebook"
+title: "Analysis"
 author: "August E. G. Mikkelsen"
-date: "2025-05-08"
+date: "`r Sys.Date()`"
 output: pdf_document
 header-includes:
   - \usepackage{xcolor}
