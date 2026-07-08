@@ -16,6 +16,15 @@ library(stringr)
 library(future)
 library(purrr)
 library(furrr)
+library(tidyr)
+
+unpack_element <- function(data, col, keep_empty = FALSE, ...) {
+  
+  data[[col]] <- lapply(data[[col]], function(x) {if (inherits(x, "list")) as.data.frame(x) else x})
+  
+  data %>% unnest(cols = all_of(col), keep_empty = keep_empty, ...)
+  
+}
 
 ```
 
@@ -30,7 +39,7 @@ grundsalg <- readRDS("grundsalg.rds")
 
 
 ## 2. Single family houses 
-The raw data contain a broad set of property types, ownership structures, buildings, units, and land parcels. This section restricts the data to a clean sample of ordinary single-family houses, single-family house sales, and single-family lot sales.
+The raw data contain a broad set of property types, ownership structures, buildings, units, and land parcels. This section restricts the data to a clean sample of single-family houses, single-family house sales, and single-family lot sales.
 
 First, the data are restricted to simple property structures. For property sales and properties, only observations with exactly one valuation property, one land parcel, one unit, and one building are retained. For lot sales, only observations with exactly one valuation property and one land parcel are retained. This removes complex cases where the sale or property cannot be clearly interpreted as a single house or a single lot.
 
@@ -42,7 +51,7 @@ Finally, standard single-family house properties, standard single-family house s
 
 ```{r PCL, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
-#Kun én vurderingsejendom, enhed, delgrund og bygning  
+#Only observations with exactly one valuation property, one land parcel, one unit, and one building
 ejendomssalg <- ejendomssalg %>%
                 add_count(vurderingsejendom_id_ice, df_virkningstid, name = "n_vurd") %>%
                 add_count(delgrund.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
@@ -66,7 +75,7 @@ grundsalg <- grundsalg %>%
              select(-n_vurd, -n_delgrund)
 
 
-#Fjern bunkesalg
+#Remove bulk sales
 ejendomssalg <- ejendomssalg %>%
                 group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, vurinfo.kommunenummer) %>%
                 filter(n() == 1) %>%
@@ -78,39 +87,22 @@ grundsalg <- grundsalg %>%
              ungroup()
 
 
-#Berig delgrunde med plandata for deljordstykker. 
+## Unfold information about each deljordstykke
+ejendomssalg <- unpack_element(ejendomssalg, "delgrund.deljordstykke")
 
-## fold deljordstykker ud
-ejendomssalg <- udtraek_element(data = ejendomssalg,
-                                col = "delgrund.deljordstykke",
-                                keep_cols = names(ejendomssalg))
+vurderingsejendomme <- unpack_element(vurderingsejendomme, "delgrund.deljordstykke")
 
-vurderingsejendomme <- udtraek_element(data = vurderingsejendomme,
-                                       col = "delgrund.deljordstykke",
-                                       keep_cols = names(vurderingsejendomme))
-
-grundsalg <- udtraek_element(data = grundsalg,
-                             col = "delgrund.deljordstykke",
-                             keep_cols = names(grundsalg))
+grundsalg <- unpack_element(grundsalg, "delgrund.deljordstykke")
 
 
-## fold plandata ud
-ejendomssalg <- udtraek_element(data = ejendomssalg,
-                                col = "deljordstykke.plandata",
-                                keep_cols = names(ejendomssalg),
-                                names_sep = "_")
+## Unfold planning information
+ejendomssalg <- unpack_element(ejendomssalg, "deljordstykke.plandata", names_sep = "_")
 
-vurderingsejendomme <- udtraek_element(data = vurderingsejendomme,
-                                       col = "deljordstykke.plandata",
-                                       keep_cols = names(vurderingsejendomme),
-                                       names_sep = "_")
+vurderingsejendomme <- unpack_element(vurderingsejendomme, "deljordstykke.plandata", names_sep = "_")
 
-grundsalg <- udtraek_element(data = grundsalg,
-                             col = "deljordstykke.plandata",
-                             keep_cols = names(grundsalg),
-                             names_sep = "_")
+grundsalg <- unpack_element(grundsalg, "deljordstykke.plandata", names_sep = "_")
 
-#Standard PCL-ejendomme
+#Standard single family houses
 ejendomssalg_pcl <- ejendomssalg %>%
                     filter(bygning.bygningsanvendelse %in% c(120,121,122,130,131,132),
                            enhed.enhedsanvendelse %in% c(120,121,122,130,131,132),
@@ -194,7 +186,7 @@ First, observations with missing values in variables required for the subsequent
 
 Second, a set of consistency checks is imposed. Sales are only retained when the sale year is after the recorded construction and renovation years. The registered living area must match the building’s residential area, and the registered land area must be positive and consistent across the valuation property, land parcel, and sub-parcel records. This removes cases where area definitions differ across data sources or where road areas and parcel boundaries complicate the interpretation of the property.
 
-Third, the sample is restricted to ordinary single-family houses and lots within reasonable value and size ranges. Property and lot sales with very low or very high prices are removed. Properties are restricted to land areas between 100 and 3,000 m², living areas between 50 and 400 m², construction year from 1900 onward, and urban or rural zoning. The categorical building and unit variables are restricted to the most common categories in the sales data, covering the dominant types of use, heating, roof material, wall material, number of rooms, bathrooms, and floors.
+Third, the sample is restricted to detached and semi-detached single-family houses and lots within reasonable value and size ranges. Property and lot sales with very low or very high prices are removed. Properties are restricted to land areas between 100 and 3,000 m², living areas between 50 and 400 m², construction year from 1900 onward, and urban or rural zoning. The categorical building and unit variables are restricted to the most common categories in the sales data, covering the dominant types of use, heating, roof material, wall material, number of rooms, bathrooms, and floors.
 
 Fourth, sales with selected sales flags are excluded. These flags identify transactions that may not represent ordinary arm’s-length market sales or otherwise contain special circumstances that make them unsuitable for model training.
 
@@ -344,19 +336,22 @@ grundsalg_pcl <- grundsalg_pcl %>%
 #Der vælges specifikanvendelseskategori med prioritet i rækkefølgen 1110, 1120 og 1100 
 ejendomssalg_pcl <- ejendomssalg_pcl %>%
                     group_by(vurderingsejendom_id_ice, salg.koebsdato) %>%
-                    arrange(desc(match(deljordstykke.plandata_plandata.specifikanvendelseskategori, c("1100", "1120", "1110"))), .by_group = TRUE) %>%
+                    arrange(desc(match(deljordstykke.plandata_plandata.specifikanvendelseskategori, c("1100", "1120", "1110"))), 
+                            .by_group = TRUE) %>%
                     slice(1) %>%
                     ungroup()
 
 vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
                            group_by(vurderingsejendom_id_ice) %>%
-                           arrange(desc(deljordstykke.plandata_plandata.specifikanvendelseskategori == "1110"), .by_group = TRUE) %>%
+                           arrange(desc(match(deljordstykke.plandata_plandata.specifikanvendelseskategori, c("1100", "1120", "1110"))), 
+                                   .by_group = TRUE) %>%
                            slice(1) %>%
                            ungroup()
 
 grundsalg_pcl <- grundsalg_pcl %>%
                  group_by(vurderingsejendom_id_ice, salg.koebsdato) %>%
-                 arrange(desc(deljordstykke.plandata_plandata.specifikanvendelseskategori == "1110"), .by_group = TRUE) %>%
+                 arrange(desc(match(deljordstykke.plandata_plandata.specifikanvendelseskategori, c("1100", "1120", "1110"))), 
+                         .by_group = TRUE) %>%                 
                  slice(1) %>%
                  ungroup()
 

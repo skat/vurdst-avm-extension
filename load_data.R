@@ -37,16 +37,17 @@
 # These files have been preloaded and are included in the GitHub repository and are used as inputs for
 # the subsequent analysis.
 # =============================================================================
-
+#konstant and core are internal Vurderingsstyrelsen packages
 if (!requireNamespace("konstant", quietly = TRUE)) {devtools::install(konstant_path, upgrade = "never")}
 if (!requireNamespace("core", quietly = TRUE)) {devtools::install(core_path, upgrade = "never")}
+library(konstant)
+library(core)
 library(dplyr)
 library(stringr)
 library(future)
 library(purrr)
 library(furrr)
-library(konstant)
-library(core)
+
 
 variable <- c("salg_id_ice",
               "vurderingsejendom_id_ice",
