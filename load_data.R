@@ -196,7 +196,7 @@ process_vurderingsejendomme_chunk <- function(file) {
 # -------------------------
 
 #2020
-chunks <- list.files(path = "/data/data/premodeldataflow/20250613_vuraar2020//",
+chunks <- list.files(path = "/data/data/premodeldataflow/20250613_vuraar2020/",
                      pattern = "salg.ndjson.xz",
                      recursive = TRUE,
                      full.names = TRUE)
@@ -274,7 +274,7 @@ grundsalg_2020 <- salg_2020 %>% filter(!(vurderingsejendom_id_ice %in% bygningsi
 
 
 #2024
-chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024//",
+chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024/",
                      pattern = "salg.ndjson.xz",
                      recursive = TRUE,
                      full.names = TRUE)
