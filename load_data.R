@@ -201,7 +201,6 @@ chunks <- list.files(path = "/data/data/premodeldataflow/20250613_vuraar2020/",
                      recursive = TRUE,
                      full.names = TRUE)
 
-
 markedsdata <- future_map_dfr(chunks,
                               function(x) x %>%
                               indlaes_vurderingsejendomme(trim = TRUE, salgsdata = TRUE))
@@ -278,7 +277,6 @@ chunks <- list.files(path = "/data/data/premodeldataflow/20250601_vuraar2024/",
                      pattern = "salg.ndjson.xz",
                      recursive = TRUE,
                      full.names = TRUE)
-
 
 markedsdata <- future_map_dfr(chunks,
                               function(x) x %>%
