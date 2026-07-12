@@ -193,7 +193,7 @@ Fourth, sales with selected sales flags are excluded. These flags identify trans
 Finally, because the unfolding of planning data can create multiple rows per property, one planning category is selected for each property or sale. When several relevant planning categories are present, the priority order is 1110, then 1120, and finally 1100. The section ends with uniqueness checks to ensure that the resulting data sets contain one row per relevant property-sale, property, or lot-sale unit.
 
 
-```{r Cleaning,  eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Cleaning, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 #Fjen NA'er for forskellige variable
 ejendomssalg_pcl <- ejendomssalg_pcl %>%
