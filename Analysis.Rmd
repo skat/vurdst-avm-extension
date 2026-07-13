@@ -365,7 +365,7 @@ table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 The code below fits the GAM model structure described in "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market" based on the cross validation split employed. 
 
 ```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
-fit_fold <- function(i, data, k_spatial, k_other = 10, fraction = 1.0, checkpoint_prefix = "Model", save_checkpoint = TRUE, seed = 123) {
+fit_fold <- function(i, data, k_spatial, k_other = k_other, fraction = 1.0, checkpoint_prefix = "Model", save_checkpoint = TRUE, seed = 123) {
   
   training_subset <- data %>% filter(validation_set != i)
 
@@ -1775,138 +1775,225 @@ if (load) {
 ```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
 if (load) {
-
+  
   models_direct <- readRDS("saved_files/models_direct.rds")
   models_standard_property <- readRDS("saved_files/models_standard_property.rds")
   models_combined <- readRDS("saved_files/models_combined.rds")
-
+  
 } else {
-
+  
   # -------------------------
-  # 1. Fit helpers
+  # 1. Direct lot model
   # -------------------------
   
-  fit_direct_fold <- function(fold, data) {
+  fit_direct_fold <- function(i,
+                              data,
+                              k_spatial,
+                              k_other = k_other,
+                              checkpoint_prefix = "direct_lot",
+                              save_checkpoint = TRUE) {
     
-    training_subset <- data %>% filter(validation_set != fold)
+    training_subset <- data %>% filter(validation_set != i)
     
-    bam(sales_price ~
-        s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-        s(sales_date_numeric, k = 5, by = municipality_type, pc = 2024) +
-        s(lot_size, k = 5, by = municipality_type, pc = 800) +
-        s(coast_distance, k = 5, pc = 1500) +
-        s(lake_distance, k = 5, pc = 500) +
-        s(stream_distance, k = 5, pc = 1000) +
-        s(road_distance, k = 5, pc = 2000) +
-        s(highway_distance, k = 5, pc = 2000) +
-        s(train_station_distance, k = 5, pc = 2000) +
-        s(railway_distance, k = 5, pc = 1000) +
-        s(windturbine_distance, k = 5, pc = 3000) +
-        s(ocean_view, k = 5, pc = 0) +
-        s(lake_view, k = 5, pc = 0) +
-        s(forest_size, k = 5, pc = 0),
-        data = training_subset,
-        family = tw(link = log),
-        method = "fREML")
+    model <- bam(sales_price ~ s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+                               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
+                               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
+                               s(coast_distance, k = k_other, pc = 1500) +
+                               s(lake_distance, k = k_other, pc = 500) +
+                               s(stream_distance, k = k_other, pc = 1000) +
+                               s(road_distance, k = k_other, pc = 2000) +
+                               s(highway_distance, k = k_other, pc = 2000) +
+                               s(train_station_distance, k = k_other, pc = 2000) +
+                               s(railway_distance, k = k_other, pc = 1000) +
+                               s(windturbine_distance, k = k_other, pc = 3000) +
+                               s(ocean_view, k = k_other, pc = 0) +
+                               s(lake_view, k = k_other, pc = 0) +
+                               s(forest_size, k = k_other, pc = 0),
+                data = training_subset,
+                chunk.size = nrow(training_subset),
+                family = tw(link = log),
+                method = "fREML")
+    
+    if (save_checkpoint) {
+      
+      filename <- sprintf("%s_fold%d_kspatial%d_kother%d.rds",
+                          checkpoint_prefix,
+                          i,
+                          k_spatial,
+                          k_other)
+      
+      saveRDS(model, file = file.path("checkpoints", filename))
+      
+    }
+    
+    model
   }
   
-  fit_standard_property_fold <- function(fold, data) {
+  # -------------------------
+  # 2. Standard-property model
+  # -------------------------
+  
+  fit_standard_property_fold <- function(i, 
+                                         data, 
+                                         k_spatial, 
+                                         k_standard_property = 10, 
+                                         checkpoint_prefix = "standard_property", 
+                                         save_checkpoint = TRUE) {
     
-    training_subset <- data %>% filter(validation_set != fold)
+    training_subset <- data %>% filter(validation_set != i)
     
-    standard_property_var <- paste0("standard_property_value_Model", fold)
+    standard_property_var <- paste0("standard_property_value_Model", i)
     
     formula_standard_property <- as.formula(paste0("sales_price ~ ",
-                                                   "s(", standard_property_var, ", k = 10) + ",
+                                                   "s(", standard_property_var, ", k = ", k_standard_property, ") + ",
                                                    "s(lot_size, k = 6, pc = 800) + ",
                                                    "s(maximum_coverage_percentage, k = 3, pc = 30) + ",
                                                    "s(number_of_divisions, k = 3, pc = 1) + ",
-                                                   "s(coordinate_east, coordinate_north, k = ", k_spatial, ", pc = c(697000, 6150000))"))
+                                                   "s(coordinate_east, coordinate_north, ",
+                                                   "k = ", k_spatial,
+                                                   ", pc = c(697000, 6150000))"))
     
-    bam(formula_standard_property,
-        data = training_subset,
-        family = tw(link = log),
-        method = "fREML")
+    model <- bam(formula_standard_property,
+                 data = training_subset,
+                 chunk.size = nrow(training_subset),
+                 family = tw(link = log),
+                 method = "fREML")
+    
+    if (save_checkpoint) {
+      
+      filename <- sprintf("%s_fold%d_kspatial%d_kstandard%d.rds",
+                          checkpoint_prefix,
+                          i,
+                          k_spatial,
+                          k_standard_property)
+      
+      saveRDS(model, file = file.path("checkpoints", filename))
+    }
+    
+    model
   }
   
+  # -------------------------
+  # 3. Combined model
+  # -------------------------
   
-  fit_combined_fold <- function(fold, lot_data, property_data, k_spatial, k_other = 10) {
+  fit_combined_fold <- function(i,
+                                lot_data,
+                                property_data,
+                                k_spatial,
+                                k_other = k_other,
+                                checkpoint_prefix = "combined",
+                                save_checkpoint = TRUE) {
     
-    lot_train <- lot_data %>% filter(validation_set != fold) 
-    property_train <- property_data %>% filter(validation_set != fold)
-    training_subset <- bind_rows(lot_train, property_train)
+    lot_training_subset <- lot_data %>% filter(validation_set != i)
     
-    bam(sales_price ~
-        s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-        s(coordinate_east, coordinate_north, k = k_spatial, by = type_ordered, pc = c(697000, 6150000)) +
-        s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
-        s(year_built, k = k_other, by = municipality_type, pc = 1970) +
-        s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
-        s(living_space, k = k_other, by = municipality_type, pc = 140) +
-        s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-        s(coast_distance, k = k_other, pc = 1500) +
-        s(lake_distance, k = k_other, pc = 500) +
-        s(stream_distance, k = k_other, pc = 1000) +
-        s(road_distance, k = k_other, pc = 2000) +
-        s(highway_distance, k = k_other, pc = 2000) +
-        s(train_station_distance, k = k_other, pc = 2000) +
-        s(railway_distance, k = k_other, pc = 1000) +
-        s(windturbine_distance, k = k_other, pc = 3000) +
-        s(ocean_view, k = k_other, pc = 0) +
-        s(lake_view, k = k_other, pc = 0) +
-        s(forest_size, k = k_other, pc = 0) +
-        s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
-        house_type * municipality_type +
-        roof_type * municipality_type +
-        wall_type * municipality_type +
-        heating_type * municipality_type +
-        type,
-        data = training_subset,
-        chunk.size = nrow(training_subset),
-        family = tw(link = log),
-        method = "fREML"
-    )
+    property_training_subset <- property_data %>% filter(validation_set != i)
+    
+    training_subset <- bind_rows(lot_training_subset, property_training_subset)
+    
+    model <- bam(sales_price ~ s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
+                               s(coordinate_east, coordinate_north, k = k_spatial, by = type_ordered, pc = c(697000, 6150000)) +
+                               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
+                               s(year_built, k = k_other, by = municipality_type, pc = 1970) +
+                               s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
+                               s(living_space, k = k_other, by = municipality_type, pc = 140) +
+                               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
+                               s(coast_distance, k = k_other, pc = 1500) +
+                               s(lake_distance, k = k_other, pc = 500) +
+                               s(stream_distance, k = k_other, pc = 1000) +
+                               s(road_distance, k = k_other, pc = 2000) +
+                               s(highway_distance, k = k_other, pc = 2000) +
+                               s(train_station_distance, k = k_other, pc = 2000) +
+                               s(railway_distance, k = k_other, pc = 1000) +
+                               s(windturbine_distance, k = k_other, pc = 3000) +
+                               s(ocean_view, k = k_other, pc = 0) +
+                               s(lake_view, k = k_other, pc = 0) +
+                               s(forest_size, k = k_other, pc = 0) +
+                               s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
+                               house_type * municipality_type +
+                               roof_type * municipality_type +
+                               wall_type * municipality_type +
+                               heating_type * municipality_type +
+                               type,
+                 data = training_subset,
+                 chunk.size = nrow(training_subset),
+                 family = tw(link = log),
+                 method = "fREML")
+    
+    if (save_checkpoint) {
+      
+      filename <- sprintf("%s_fold%d_kspatial%d_kother%d.rds",
+                          checkpoint_prefix,
+                          i,
+                          k_spatial,
+                          k_other)
+      
+      saveRDS(model, file = file.path("checkpoints", filename))
+    }
+    
+    model
   }
-
+  
   # -------------------------
-  # 2. Fit model sets
+  # 4. Shared ensemble helper
   # -------------------------
   
-  fit_model_set <- function(fit_fun, N, ...) {
+  fit_model_ensemble <- function(fit_fun,
+                                 N,
+                                 checkpoint_prefix,
+                                 ...) {
     
-    models <- future_lapply(seq_len(N), function(fold) {
-      message("Fitting fold ", fold, " ...")
-      fit_fun(fold = fold, ...)
+    models <- future_lapply(seq_len(N), function(i) {
+      
+      message("Fitting ", checkpoint_prefix, ", fold ", i, " of ", N, " ...")
+      
+      fit_fun(i = i, checkpoint_prefix = checkpoint_prefix, ...)
+      
     })
     
     names(models) <- paste0("Model", seq_len(N))
+    
     models
   }
   
-  models_direct <- fit_model_set(fit_fun = fit_direct_fold,
-                                 N = N,
-                                 data = dataset_lot_sales_cv_standardized)
-  
-  models_standard_property <- fit_model_set(fit_fun = fit_standard_property_fold,
-                                            N = N,
-                                            data = dataset_lot_sales_cv_standardized)
-  
-  models_combined <- fit_model_set(fit_fun = fit_combined_fold,
-                                   N = N,
-                                   lot_data = dataset_lot_sales_cv_standardized,
-                                   property_data = dataset_property_sales_cv,
-                                   k_spatial = k_spatial,
-                                   k_other = k_other)
-
   # -------------------------
-  # 3. Save separately
+  # 5. Fit model ensembles
+  # -------------------------
+  
+  models_direct <- fit_model_ensemble(fit_fun = fit_direct_fold,
+                                      N = N,
+                                      checkpoint_prefix = "direct_lot",
+                                      data = dataset_lot_sales_cv_standardized,
+                                      k_spatial = k_spatial,
+                                      k_other = k_other)
+  
+  models_standard_property <- fit_model_ensemble(fit_fun = fit_standard_property_fold,
+                                                 N = N,
+                                                 checkpoint_prefix = "standard_property",
+                                                 data = dataset_lot_sales_cv_standardized,
+                                                 k_spatial = k_spatial,
+                                                 k_standard_property = 10)
+  
+  models_combined <- fit_model_ensemble(fit_fun = fit_combined_fold,
+                                        N = N,
+                                        checkpoint_prefix = "combined",
+                                        lot_data = dataset_lot_sales_cv_standardized,
+                                        property_data = dataset_property_sales_cv,
+                                        k_spatial = k_spatial,
+                                        k_other = k_other)
+  
+  # -------------------------
+  # 6. Save complete ensembles
   # -------------------------
   
   saveRDS(models_direct, "saved_files/models_direct.rds")
+  
   saveRDS(models_standard_property, "saved_files/models_standard_property.rds")
+  
   saveRDS(models_combined, "saved_files/models_combined.rds")
-
+  
 }
+
 ```
 
 ```{r Spatial smooths lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
@@ -3348,7 +3435,7 @@ print(plot_value_densities_combined)
 
 
 
-```{r Sensitivity to standard house parameters, eval=TRUE, echo=TRUE, warning=FALSE}
+```{r Sensitivity to standard house parameters, eval=FALSE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # Sensitivity analysis: standard-house specification
