@@ -47,7 +47,7 @@ Second, bulk sales are removed. Sales with the same purchase date, transaction i
 
 Third, the nested land-use information is unfolded. Each land parcel contains deljordstykker, and each deljordstykke contains planning information. These nested fields are expanded so that zoning and planning restrictions can be used directly in the filtering.
 
-Finally, standard single-family house properties, standard single-family house sales, and standard single-family lot sales are selected. The filters require residential use, one single-family unit, no business area, standard residential facilities, one land parcel, no protected area, no summerhouse or unzoned area, and planning categories consistent with single-family residential use. 
+Finally, standard single-family house properties, standard single-family house sales, and standard single-family lot sales are selected. The filters are, for example, residential use, one single-family unit, no business area, standard residential facilities, one land parcel, no protected area, no summerhouse or unzoned area, and planning categories consistent with single-family residential use. 
 
 ```{r PCL, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -106,6 +106,9 @@ grundsalg <- unpack_element(grundsalg, "deljordstykke.plandata", names_sep = "_"
 ejendomssalg_pcl <- ejendomssalg %>%
                     filter(bygning.bygningsanvendelse %in% c(120,121,122,130,131,132),
                            enhed.enhedsanvendelse %in% c(120,121,122,130,131,132),
+                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.opfoerelsesaar,
+                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.omtilbygningsaar,
+                           enhed.areal_til_beboelse == bygning.samlet_boligareal,
                            salg.ejendomkategori == "EjendomKategoriEnfamiliesejendom",
                            !salg.flereejendommeindikator,
                            is.na(salg.bygningsforholdkode),
@@ -135,6 +138,7 @@ ejendomssalg_pcl <- ejendomssalg %>%
 vurderingsejendomme_pcl <- vurderingsejendomme %>%
                            filter(bygning.bygningsanvendelse %in% c(120,121,122,130,131,132),
                                   enhed.enhedsanvendelse %in% c(120,121,122,130,131,132),
+                                  enhed.areal_til_beboelse == bygning.samlet_boligareal,
                                   vurinfo.vurbenyttelseskode == "01", #Standard beboelse
                                   vurinfo.antal_sfer == 1,
                                   vurinfo.antal_bfer == 1,
@@ -184,11 +188,9 @@ This section applies the final cleaning steps used to construct the modelling sa
 
 First, observations with missing values in variables required for the subsequent models are removed. This includes coordinates, sales dates, prices, building characteristics, land area, zoning, view variables, and selected location variables.
 
-Second, a set of consistency checks is imposed. Sales are only retained when the sale year is after the recorded construction and renovation years. The registered living area must match the building’s residential area, and the registered land area must be positive and consistent across the valuation property, land parcel, and sub-parcel records. This removes cases where area definitions differ across data sources or where road areas and parcel boundaries complicate the interpretation of the property.
+Second, the sample is restricted to detached and semi-detached single-family houses and lots within reasonable value and size ranges. Property and lot sales with very low or very high prices are removed. Properties are restricted to land areas between 100 and 3,000 m², living areas between 50 and 400 m², construction year from 1900 onward, and urban or rural zoning. The categorical building and unit variables are restricted to the most common categories in the sales data, covering the dominant types of use, heating, roof material, wall material, number of rooms, bathrooms, and floors.
 
-Third, the sample is restricted to detached and semi-detached single-family houses and lots within reasonable value and size ranges. Property and lot sales with very low or very high prices are removed. Properties are restricted to land areas between 100 and 3,000 m², living areas between 50 and 400 m², construction year from 1900 onward, and urban or rural zoning. The categorical building and unit variables are restricted to the most common categories in the sales data, covering the dominant types of use, heating, roof material, wall material, number of rooms, bathrooms, and floors.
-
-Fourth, sales with selected sales flags are excluded. These flags identify transactions that may not represent ordinary arm’s-length market sales or otherwise contain special circumstances that make them unsuitable for model training.
+Third, sales with selected sales flags are excluded. These flags identify transactions that may not represent ordinary arm’s-length market sales or otherwise contain special circumstances that make them unsuitable for model training.
 
 Finally, because the unfolding of planning data can create multiple rows per property, one planning category is selected for each property or sale. When several relevant planning categories are present, the priority order is 1110, then 1120, and finally 1100. The section ends with uniqueness checks to ensure that the resulting data sets contain one row per relevant property-sale, property, or lot-sale unit.
 
@@ -239,40 +241,6 @@ grundsalg_pcl <- grundsalg_pcl %>% filter(!is.na(vurinfo.adresse.koordinatoest),
                                           !is.na(vurinfo.areal_samlet_skov))
 
 
-#Fjern forskellige abnormaliteter. Bla. ejendomme med vejarealer for at goere livet nemmere for os. 
-ejendomssalg_pcl <- ejendomssalg_pcl %>%
-                    filter(as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.opfoerelsesaar,
-                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.omtilbygningsaar,
-                           enhed.areal_til_beboelse == bygning.samlet_boligareal,
-                           enhed.areal_til_beboelse > 0,
-                           vurinfo.registreretareal_fratrukket_vejareal > 0,
-                           delgrund.registeret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                           delgrund.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal,
-                           deljordstykke.registreret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                           deljordstykke.registreret_areal == vurinfo.registreretareal_fratrukket_vejareal,
-                           deljordstykke.arealberegnetudenvej == vurinfo.registreretareal_fratrukket_vejareal,
-                           deljordstykke.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal) 
-
-vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
-                           filter(enhed.areal_til_beboelse == bygning.samlet_boligareal,
-                                  enhed.areal_til_beboelse > 0,
-                                  vurinfo.registreretareal_fratrukket_vejareal > 0,
-                                  delgrund.registeret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                                  delgrund.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal,
-                                  deljordstykke.registreret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                                  deljordstykke.registreret_areal == vurinfo.registreretareal_fratrukket_vejareal,
-                                  deljordstykke.arealberegnetudenvej == vurinfo.registreretareal_fratrukket_vejareal,
-                                  deljordstykke.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal)
-
-grundsalg_pcl <- grundsalg_pcl %>% 
-                 filter(vurinfo.registreretareal_fratrukket_vejareal > 0,
-                        delgrund.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal,
-                        deljordstykke.registreret_areal_uden_vej == vurinfo.registreretareal_fratrukket_vejareal,
-                        deljordstykke.registreret_areal == vurinfo.registreretareal_fratrukket_vejareal,
-                        deljordstykke.arealberegnetudenvej == vurinfo.registreretareal_fratrukket_vejareal,
-                        deljordstykke.arealberegnet == vurinfo.registreretareal_fratrukket_vejareal)
-
-
 #Udvælg ejendomme med standardegenskaber. For at gøre det simpelt udvælges kun de mest hyppige enhedstyper, tagtyper osv for salgene. 
 round(prop.table(table(ejendomssalg_pcl$enhed.enhedsanvendelse)), 3) * 100 #120'ere og 130'ere udgør 98%, så disse vælges
 round(prop.table(table(ejendomssalg_pcl$bygning.varmeinstallation)), 3) * 100 #1, 2, 5 og 7 er klart mest fremtrædende så disse vælges
@@ -287,6 +255,9 @@ ejendomssalg_pcl <- ejendomssalg_pcl %>%
                     filter(salg.ialtkoebesum >= 1e+5 & salg.ialtkoebesum <= 1.5e+7,
                            vurinfo.registreretareal_fratrukket_vejareal <= 3000,
                            vurinfo.registreretareal_fratrukket_vejareal >= 100,
+                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.opfoerelsesaar,
+                           as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.omtilbygningsaar,
+                           enhed.areal_til_beboelse == bygning.samlet_boligareal,
                            enhed.areal_til_beboelse <= 400,
                            enhed.areal_til_beboelse >= 50,
                            bygning.opfoerelsesaar >= 1900,
@@ -304,6 +275,7 @@ ejendomssalg_pcl <- ejendomssalg_pcl %>%
 vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
                            filter(vurinfo.registreretareal_fratrukket_vejareal <= 3000,
                                   vurinfo.registreretareal_fratrukket_vejareal >= 100,
+                                  enhed.areal_til_beboelse == bygning.samlet_boligareal,
                                   enhed.areal_til_beboelse <= 400,
                                   enhed.areal_til_beboelse >= 50,
                                   bygning.opfoerelsesaar >= 1900,
