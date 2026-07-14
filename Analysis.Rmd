@@ -81,7 +81,7 @@ The analysis is based on a dataset of single-family home sales, single-family lo
 coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
 
 #Load data set
-dataset <- readRDS("dataset.rds")
+dataset <- readRDS("model_dataset.rds")
 
 #The three types included in the dataset. 
 table(dataset$type)

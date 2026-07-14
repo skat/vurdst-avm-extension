@@ -358,7 +358,7 @@ The final data set contains sales information, location variables, building char
 
 Finally, categorical variables are translated and recoded into interpretable categories. This includes zoning, municipality type, house type, roof material, heating type, and wall material. Renovation years coded as zero are set to missing values so that later imputation steps can treat them consistently.
 
-The resulting file, dataset.rds, is the main input used in the analysis notebook.
+The resulting file, model_dataset.rds, is the main input used in the analysis notebook.
 
 ```{r Dataset, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 #join data frames of property sales and valuation properties
@@ -454,7 +454,7 @@ dataset$year_rebuilt[which(dataset$year_rebuilt==0)] = NA
 
 
 #save file
-saveRDS(dataset, "dataset.rds")
+saveRDS(dataset, "model_dataset.rds")
 
 ```
 
