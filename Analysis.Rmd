@@ -954,7 +954,7 @@ plot_validation_residuals_log <- ggplot(residual_df_validation,
                                 guide = guide_legend(override.aes = list(color = "black", size = 0.8),
                                                      nrow = 1, 
                                                      byrow = TRUE)) +
-                                ylim(-1, 1) +
+                                coord_cartesian(ylim = c(-1, 1)) +
                                 labs(x = "Sales price [million DKK]", 
                                      y = "Log residuals") +
                                 theme(legend.position = c(0.5, 0.4))
@@ -1388,7 +1388,7 @@ saveRDS(plot_appraise, "saved_files/plot_appraise.rds")
 
 
 ### Distributional Assumptions
-The code simulates a series of posterior distributions of the data based on Model 1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
+The subsequent cell generates posterior predictive draws from Model 1 and compares their marginal sales-price distributions with the empirical distribution (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
 
 ```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -1598,7 +1598,7 @@ print(concurvity_heatmaps)
 
 
 ### Convergence of the Spatial Smooth
-The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the test error.
+The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the validation error.
 
 ```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 k_values <- c(100, 200, 500, 1000, 1500, 2000, 3000, 4000, 5000)
@@ -1693,7 +1693,6 @@ standardize_property <- function(data, reference_data) {
                     living_space = 140,
                     lot_size = 800,
                     maximum_coverage_percentage = 30,
-                    unused_floor_area = 0,
                     number_of_divisions = 1,
                     number_of_bathrooms = 1,
                     house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
@@ -1729,7 +1728,6 @@ if (load) {
   #restore original lot variables but leave standard building characteristics on the lot
   dataset_lot_sales_cv_standardized$lot_size <- dataset_lot_sales_cv$lot_size
   dataset_lot_sales_cv_standardized$maximum_coverage_percentage <- dataset_lot_sales_cv$maximum_coverage_percentage
-  dataset_lot_sales_cv_standardized$unused_floor_area <- dataset_lot_sales_cv$unused_floor_area
   dataset_lot_sales_cv_standardized$number_of_divisions <- dataset_lot_sales_cv$number_of_divisions
 
   #save
@@ -3100,7 +3098,7 @@ prepare_type <- function(data, type_value) {
 
 get_property_value_vars <- function(fold_name) {
   
-  property_model <- str_extract(fold_name, "Model[1-4]")
+  property_model <- str_extract(fold_name, "Model\\d+")
   stopifnot(!is.na(property_model))
   
   list(property_value_var = paste0("property_value_", property_model),
@@ -3453,7 +3451,6 @@ standard_house_specs <- list(
                             living_space = 140,
                             lot_size = 800,
                             maximum_coverage_percentage = 30,
-                            unused_floor_area = 0,
                             number_of_divisions = 1,
                             number_of_bathrooms = 1,
                             house_type = "Detached",
@@ -3466,7 +3463,6 @@ standard_house_specs <- list(
                         living_space = 100,
                         lot_size = 800,
                         maximum_coverage_percentage = 30,
-                        unused_floor_area = 0,
                         number_of_divisions = 1,
                         number_of_bathrooms = 1,
                         house_type = "Detached",
@@ -3479,7 +3475,6 @@ standard_house_specs <- list(
                         living_space = 180,
                         lot_size = 800,
                         maximum_coverage_percentage = 30,
-                        unused_floor_area = 0,
                         number_of_divisions = 1,
                         number_of_bathrooms = 1,
                         house_type = "Detached",
@@ -3492,7 +3487,6 @@ standard_house_specs <- list(
                         living_space = 140,
                         lot_size = 800,
                         maximum_coverage_percentage = 30,
-                        unused_floor_area = 0,
                         number_of_divisions = 1,
                         number_of_bathrooms = 1,
                         house_type = "Detached",
@@ -3505,7 +3499,6 @@ standard_house_specs <- list(
                         living_space = 140,
                         lot_size = 800,
                         maximum_coverage_percentage = 30,
-                        unused_floor_area = 0,
                         number_of_divisions = 1,
                         number_of_bathrooms = 1,
                         house_type = "Detached",
@@ -3526,7 +3519,6 @@ standardize_property_spec <- function(data, reference_data, spec) {
                   living_space = spec$living_space,
                   lot_size = spec$lot_size,
                   maximum_coverage_percentage = spec$maximum_coverage_percentage,
-                  unused_floor_area = spec$unused_floor_area,
                   number_of_divisions = spec$number_of_divisions,
                   number_of_bathrooms = spec$number_of_bathrooms,
                   house_type = factor(spec$house_type, levels = levels(factor(reference_data$house_type))),
@@ -3540,7 +3532,6 @@ restore_lot_variables <- function(standardized_lot_data, original_lot_data) {
   
   standardized_lot_data %>% mutate(lot_size = original_lot_data$lot_size,
                                    maximum_coverage_percentage = original_lot_data$maximum_coverage_percentage,
-                                   unused_floor_area = original_lot_data$unused_floor_area,
                                    number_of_divisions = original_lot_data$number_of_divisions)
   
 }
