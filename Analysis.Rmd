@@ -60,23 +60,26 @@ for (f in c("saved_files", "checkpoints")) {
 }
 ```
 
-This notebook provides a walkthrough of the analysis and results described in severals papers, which as of June 2026 are: 
+This notebook provides a walkthrough of the analysis and results described in several papers, which as of June 2026 are: 
 
-1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System"
-
+1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" (in review)
+2) "Property and Land value Predictions with Generalized Additive Models" (in preparation)
+3) "On the Accuracy of Hedonic Real Estate Models" (in preparation)
 
 # Dataset 
 
 ## 1. Description
-The analysis is based on a dataset of single family home sales, single family lot sales and properties in Denmark from 1 January 2014 to 1 January 2024. The dataset, included as a .rds file in this repository, is loaded and inspected below and in the subsequent cells histograms of selected variables are produced. 
+The analysis is based on a dataset of single-family home sales, single-family lot sales and properties in Denmark from 1 January 2014 to 1 January 2024. The dataset, included as a .rds file in this repository, is loaded and inspected below. In the subsequent cells histograms of selected variables are produced. These histograms are for the raw variables before any imputations and variable conversions take place.
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE}
 
 #Externally defined coordinate grid of Denmark
 coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
 
+#Load data set
 dataset <- readRDS("dataset.rds")
-#The three types included in the dataset. This notebook only uses Property and Property Sales
+
+#The three types included in the dataset. 
 table(dataset$type)
 
 #Distribution of sales prices
@@ -98,23 +101,6 @@ plot_sales_price_distribution <- ggplot(dataset %>% filter(type %in% c("Lot sale
                                  theme_minimal()
 
 plot_sales_price_distribution
-
-#Geographic distribution of properties
-plot <- ggplot() +
-        geom_contour(data = coordinate_grid,
-                     aes(x = coordinate_east,
-                         y = coordinate_north,
-                         z = as.numeric(!ocean)),
-                         color = "black",
-                         size = 0.1) +
-        geom_point(data = dataset,
-                   aes(x = coordinate_east,
-                       y = coordinate_north,
-                       color = type),
-                       size = 1.0) +
-        coord_fixed() +
-        theme_void(base_size = 10)
-
 
 plot_geographic <- ggplot(dataset, aes(coordinate_east, coordinate_north)) +
                    geom_contour(data = coordinate_grid,
@@ -166,16 +152,16 @@ plot_one <- function(df, var, label) {
     x_pos = (0.75*min(x, na.rm = TRUE) + 0.25*max(x, na.rm = TRUE))
     
     ggplot(df2, aes(x = x)) +
-      geom_histogram(bins = 30, fill = "#3182bd", color = "white") +
-      labs(x = label, y = NULL) +
-      annotate("text", x = x_pos, y = Inf, label = na_label, hjust = 0, vjust = 0, size = 4.5, color = "grey25", fontface = "bold") +
-      annotate("text", x = x_pos, y = Inf, label = zero_label, hjust = 0, vjust = 1.5, size = 4.5, color = "grey25", fontface = "bold") +
-      annotate("text", x = x_pos, y = Inf, label = rng_label, hjust = 0, vjust = 3, size = 4.5, color = "grey25", fontface = "bold") +
-      coord_cartesian(clip = "off") +
-      theme(text = element_text(size = 12),
-            plot.margin = margin(t = 28, r = 12, b = 5, l = 5),
-            panel.grid.minor = element_blank(),
-            panel.grid.major.x = element_blank())
+    geom_histogram(bins = 30, fill = "#3182bd", color = "white") +
+    labs(x = label, y = NULL) +
+    annotate("text", x = x_pos, y = Inf, label = na_label, hjust = 0, vjust = 0, size = 4.5, color = "grey25", fontface = "bold") +
+    annotate("text", x = x_pos, y = Inf, label = zero_label, hjust = 0, vjust = 1.5, size = 4.5, color = "grey25", fontface = "bold") +
+    annotate("text", x = x_pos, y = Inf, label = rng_label, hjust = 0, vjust = 3, size = 4.5, color = "grey25", fontface = "bold") +
+    coord_cartesian(clip = "off") +
+    theme(text = element_text(size = 12),
+          plot.margin = margin(t = 28, r = 12, b = 5, l = 5),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank())
 
   } else {
     
@@ -188,41 +174,40 @@ plot_one <- function(df, var, label) {
     x_pos = (nlevels(df_counts$x) + 1) / 2
     
     ggplot(df_counts, aes(x = x, y = n)) +
-      geom_col(aes(fill = x), color = "white", show.legend = FALSE) +
-      scale_fill_brewer(palette = "Set3") +
-      geom_text(aes(label = comma(n)), vjust = -0.2, size = 3.3, color = "grey15") +
-      labs(x = NULL, y = NULL) +
-      ggtitle(label) + 
-      scale_y_continuous(expand = expansion(mult = c(0.02, 0.12))) +
-      coord_cartesian(clip = "off") +
-      theme(plot.margin = margin(t = 20, r = 12, b = 5, l = 5),
-            axis.text.x = element_text(angle = 45, hjust = 1),
-            panel.grid.minor = element_blank(),
-            panel.grid.major.x = element_blank())}
+    geom_col(aes(fill = x), color = "white", show.legend = FALSE) +
+    scale_fill_brewer(palette = "Set3") +
+    geom_text(aes(label = comma(n)), vjust = -0.2, size = 3.3, color = "grey15") +
+    labs(x = NULL, y = NULL) +
+    ggtitle(label) + 
+    scale_y_continuous(expand = expansion(mult = c(0.02, 0.12))) +
+    coord_cartesian(clip = "off") +
+    theme(plot.margin = margin(t = 20, r = 12, b = 5, l = 5),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank())}
 }
 
 
-variables_continuous <- c(
-  sales_price = "Sales price [DKK]",
-  year_built = "Year built",
-  year_rebuilt = "Year rebuilt",
-  living_space = "Living space [m²]",
-  lot_size = "Lot size [m²]",
-  coast_distance = "Distance to coast [m]",
-  lake_distance = "Distance to lake [m]",
-  stream_distance = "Distance to stream [m]",
-  road_distance = "Distance to road [m]",
-  highway_distance = "Distance to highway [m]",
-  train_station_distance = "Distance to train station [m]",
-  railway_distance = "Distance to railway [m]",
-  windturbine_distance = "Distance to wind turbine [m]",
-  ocean_view = "Ocean view [m]",
-  lake_view = "Lake view [m]",
-  forest_size = "Forest size [ha]",
-  number_of_bathrooms = "Number of bathrooms",
-  number_of_rooms = "Number of rooms",
-  number_of_floors = "Number of floors",
-  sales_date = "Sales date")
+variables_continuous <- c(sales_price = "Sales price [DKK]",
+                          year_built = "Year built",
+                          year_rebuilt = "Year rebuilt",
+                          living_space = "Living space [m²]",
+                          lot_size = "Lot size [m²]",
+                          coast_distance = "Distance to coast [m]",
+                          lake_distance = "Distance to lake [m]",
+                          stream_distance = "Distance to stream [m]",
+                          road_distance = "Distance to road [m]",
+                          highway_distance = "Distance to highway [m]",
+                          train_station_distance = "Distance to train station [m]",
+                          railway_distance = "Distance to railway [m]",
+                          windturbine_distance = "Distance to wind turbine [m]",
+                          ocean_view = "Ocean view [m]",
+                          lake_view = "Lake view [m]",
+                          forest_size = "Forest size [ha]",
+                          number_of_bathrooms = "Number of bathrooms",
+                          number_of_rooms = "Number of rooms",
+                          number_of_floors = "Number of floors",
+                          sales_date = "Sales date")
 
 vars_cont <- intersect(names(variables_continuous), names(dataset))
 
@@ -234,16 +219,14 @@ wrap_plots(histograms_cont, ncol = 3)
 
 ```{r Categorical variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
-variables_categorical <- c(
-  house_type = "House type",
-  roof_type = "Roof type",
-  wall_type = "Wall type",
-  heating_type = "Heating type",
-  municipality_type = "Municipality type",
-  province = "Province",
-  region = "Region",
-  zone = "Zone"
-)
+variables_categorical <- c(house_type = "House type",
+                           roof_type = "Roof type",
+                           wall_type = "Wall type",
+                           heating_type = "Heating type",
+                           municipality_type = "Municipality type",
+                           province = "Province",
+                           region = "Region",
+                           zone = "Zone")
 
 vars_cat <- intersect(names(variables_categorical), names(dataset))
 
@@ -273,9 +256,6 @@ Missing variables with NA-entries are imputed based on the following rules:
 Furthermore, the following auxiliary variables are created: 
 
 - Numeric sales date: A numeric version of the sales date spanning the interval [2014.0, 2024.0]
-- Gross floor area: Defined as the maximum allowed maximum coverage percentage x lot size
-- Remaining floor area: Defined as lot size - gross floor area and bounded at 0. 
-- Unused floor area: Defined as gross floor area - living space and bounded at 0.
 - Number of subdivisions: Defined as lot size / subdivision size rounded down to nearest integer and bounded at 1. 
 
 The code for the above transformations is provided below. 
@@ -317,11 +297,8 @@ dataset <- dataset %>% mutate(across(c(lake_distance,
 #create a numerical variable for sales_date
 dataset <- dataset %>% mutate(sales_date = as.Date(sales_date), sales_date_numeric = decimal_date(sales_date))
 
-#auxiliary variables describing lot
-dataset <- dataset %>% mutate(gross_floor_area = lot_size * maximum_coverage_percentage/100,
-                              remaining_floor_area = pmax(0, lot_size - gross_floor_area),
-                              unused_floor_area = pmax(0, gross_floor_area - living_space),
-                              number_of_divisions = pmax(1, floor(lot_size / subdivision_size)))
+#create an integer variable for the number of possible subdivisions
+dataset <- dataset %>% mutate(number_of_divisions = pmax(1, floor(lot_size / subdivision_size)))
 
 #check that there are no remaining NA's in sales data (lot sales have NA for building variables and properties for sales date)
 which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
@@ -329,7 +306,7 @@ which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 ```
 
 ## 3. Cross-Validation 
-A simple 4-fold cross-validation split is implemented in the code below. 
+The code below partitions the property sales and lot sales into a standard four-fold cross-validation split ($K=4$). The resulting folds are subsequently used both to estimate out-of-sample predictive performance and to assess the robustness of the fitted model to perturbations of the training data.
 
 ```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 # pick out sales and properties and make factor and ordered factor of type variable for sales
@@ -362,10 +339,10 @@ table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 # Paper I: "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" 
 
 ## 1. Model training
-The code below fits the GAM model structure described in "Generalized Additive Models for Real Estate Valuation: A Case Study of the Danish Housing Market" based on the cross validation split employed. 
+The code below fits the GAM model structure described in "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". A model is fitted for each cross-validation fold using the remaining $K-1$ folds as the training data. 
 
 ```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
-fit_fold <- function(i, data, k_spatial, k_other = k_other, fraction = 1.0, checkpoint_prefix = "Model", save_checkpoint = TRUE, seed = 123) {
+fit_fold <- function(i, data, k_spatial, k_other = k_other, fraction = 1.0, checkpoint_prefix = "Model", save_checkpoint = TRUE) {
   
   training_subset <- data %>% filter(validation_set != i)
 
@@ -452,7 +429,7 @@ if (load) {
 
 ## 2. Partial effects
 
-#### Spatial smooth 
+#### Spatial smooths 
 The code below extracts the spatial smooth for each model and plots it alongside the log-scale standard error. The plotting relies on a premade spatial grid of Denmark, where ocean and land are marked. 
 
 ```{r Spatial smooths property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
@@ -685,13 +662,12 @@ for (var in names(smooth_variables)) {
 }
 
 
-saveRDS(plot_smooths, "saved_files/plot_smooths.rds")
-
 #manual axis specifications of some ill-behaved smooths to make plots easier to understand
-plot_smooths$stream_distance <- plot_smooths$stream_distance + ylim(-0.03,0.1)
-plot_smooths$lake_view <- plot_smooths$lake_view + xlim(0.0,10000) + ylim(0, 0.6)
-plot_smooths$forest_size <- plot_smooths$forest_size + xlim(0.0,40) + ylim(-0.02, 0.1)
+plot_smooths$stream_distance <- plot_smooths$stream_distance + coord_cartesian(ylim = c(-0.03, 0.1))
+plot_smooths$lake_view <- plot_smooths$lake_view + coord_cartesian(xlim = c(0.0, 10000), ylim = c(0, 0.6))
+plot_smooths$forest_size <- plot_smooths$forest_size + coord_cartesian(xlim = c(0.0,40), ylim = c(-0.02, 0.1))
 
+saveRDS(plot_smooths, "saved_files/plot_smooths.rds")
 wrap_plots(plot_smooths, ncol = 2) + 
            plot_layout(guides = "collect") &
            theme(legend.position = "bottom",
@@ -702,7 +678,7 @@ wrap_plots(plot_smooths, ncol = 2) +
 ```
 
 #### Factor effects
-The code below extracts and plots the factor effects of trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model 1. 
+The code below extracts and plots the factor effects of the trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
 ```{r Factor effects property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 factor_variables <- c(
@@ -844,7 +820,7 @@ wrap_plots(plot_factors, ncol = 2) +
 ```
 
 
-## 3. Model performance
+## 3. Predictive performance
 The code below extracts various residual types and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
 
@@ -1112,6 +1088,7 @@ print(plot_errors)
 
 
 ## 4. Model interpretation
+The code below performs valuations using the fitted models a set of simplified, fictitious properties, which are described in the main paper. 
 
 ```{r Interpretation property models, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -1249,14 +1226,17 @@ make_interpretation_results <- function(model, model_name) {
                                               adjustment_windturbine_distance *
                                               adjustment_ocean_view *
                                               adjustment_lake_view *
+                                              adjustment_forest_size *
                                               adjustment_municipality_type,
       
                         adjustment_property = adjustment_year_built *
                                               adjustment_year_rebuilt *
                                               adjustment_living_space *
+                                              adjustment_house_type *
                                               adjustment_roof_type *
                                               adjustment_wall_type *
-                                              adjustment_heating_type,
+                                              adjustment_heating_type * 
+                                              adjustment_number_of_bathrooms,
       
                         adjustment_total = adjustment_location * adjustment_property,
                         predicted_price = standard_price * adjustment_total) %>%
@@ -1306,9 +1286,8 @@ saveRDS(results_all_models, "saved_files/results_interpretation_property_models.
 
 
 
-## 4. Uncertainty detection
-
-The code below flags outliers based on both the GAM-based uncertainty estimates as well as the ensemble-based robustness measure. 
+## 5. Uncertainty detection
+The code below flags outliers based on both the GAM-based uncertainty estimate of Model 1 as well as the ensemble-based robustness measure described in the main paper. 
 
 ```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -1395,10 +1374,7 @@ print(plot_outliers_geographically)
 
 ```
 
-
-
-
-## 5. Model checking
+## 6. Model checking
 
 ### Standard Model Checks
 The code below plots various standard diagnostics for Model 1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
@@ -1411,13 +1387,13 @@ saveRDS(plot_appraise, "saved_files/plot_appraise.rds")
 ```
 
 
-### The Distributional Assumption
+### Distributional Assumptions
 The code simulates a series of posterior distributions of the data based on Model 1 and compares it to the actual distribution of sales prices (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
 
 ```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 n_draws <- 10
-samples <-  posterior_samples(models$Model1, n = n_draws) %>%
+samples <-  posterior_samples(models$Model1, n = n_draws, seed = 123, mvn_method = "mgcv") %>%
             select(.draw, .response) %>%
             mutate(draw = paste("Draw", .draw),
                    type = "Posterior draws",
@@ -1454,9 +1430,6 @@ print(plot_distribution)
 
 
 ```
-
-
-
 
 ### Concurvity Analysis
 The code investigates concurvity between the various smooths for Model 1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
@@ -1706,10 +1679,10 @@ print(plot_basis)
 
 ```
 
-# Paper II: "Property and land value predictions with Generalized Additive Models" 
+# Paper II: "Property and Land Value Predictions with Generalized Additive Models" 
 
 ### 1. Standardization
-The lot sales and properties are augmented with a fictitious single family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
+In the code below, lot sales and properties are augmented with a fictitious single-family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
 
 ```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
@@ -1770,9 +1743,10 @@ if (load) {
 ```
 
 
-### 2. Lot models
+### 2. Lot-value models
+The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data.
 
-```{r Lot models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+```{r Lot-value models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
 if (load) {
   
@@ -1995,6 +1969,11 @@ if (load) {
 }
 
 ```
+
+## 3. Partial effects
+
+#### Spatial smooths 
+The code below extracts and visualizes the spatial smooths from each of the three lot-value model ensembles. For every fold-specific model, the estimated spatial effect and its standard error are evaluated on a common coordinate grid covering Denmark. For the combined model, both the shared spatial surface and the sale-type-specific spatial adjustment are extracted.
 
 ```{r Spatial smooths lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
@@ -2281,6 +2260,8 @@ wrap_plots(plots_spatial_combined_filtered, ncol = 3)
 
 ```
 
+#### Other smooth effects 
+The code below extracts and plots the remaining smooth effects for each type of lot model. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model 1. 
 
 ```{r Other smooth effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -2498,6 +2479,8 @@ wrap_plots(plot_smooths_direct, ncol = 2)
 wrap_plots(plot_smooths_combined, ncol = 2)
 ```
 
+#### Factor effects
+The code below extracts and plots the factor effects for the combined model. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
 ```{r Factor effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 
@@ -2634,6 +2617,9 @@ wrap_plots(plot_factors, ncol = 2) +
                  legend.justification = "center")
 
 ```
+
+## 4. Predictive performance
+The code below extracts various residual types for each type of lot model and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
 ```{r Performance lot sales, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -2905,6 +2891,8 @@ print(plot_errors_lot_models)
 
 ```
 
+## 5. Stability analysis
+The code below evaluates the stability of predicted lot values across the fold-specific models for each of the three modelling approaches. All models within an ensemble are used to predict lot values for the same set of properties on the link scale. For each property, the mean prediction and the standard deviation across the fold-specific predictions are calculated. The standard deviation across the model ensembles is used as a measure of sensitivity to perturbations of the training data.
 
 ```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -3074,6 +3062,10 @@ wrap_plots(plot_ensemble_geographic, ncol = 2)
 
 ```
 
+## 6. Value decomposition
+The code below decomposes predicted property values into estimated lot and building components for each modelling approach and cross-validation fold. For the direct and standard-property approaches, property values are taken from the previously fitted property models, while lot values are predicted using the corresponding lot model. For the combined approach, property, standardized-property, and lot values are generated from the same joint model by changing the sale type and building characteristics supplied at prediction.
+
+Building value is defined as the difference between the predicted property value and predicted lot value. The same decomposition is also calculated for the standardized property. The resulting values are summarized using measures of central tendency, dispersion, selected quantiles, building shares, values per square metre, and the frequency of negative building-value estimates.
 
 ```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -3433,7 +3425,12 @@ saveRDS(plot_value_densities_combined, "saved_files/plot_value_densities_combine
 print(plot_value_densities_combined)
 ```
 
+## 7. Sensitivity analysis
+The code below examines how sensitive the lot-value estimates are to the choice of standard house. Several alternative specifications are considered by varying the reference dwelling’s living area and construction year while keeping the remaining building characteristics fixed.
 
+For each specification, the lot-sale and property data are standardized to the chosen reference house, and the fold-specific property models are used to calculate corresponding standard-property values. The original lot characteristics are then restored for the lot sales so that only the assumed building characteristics differ across specifications.
+
+The standard-property and combined lot models are subsequently re-estimated for every cross-validation fold under each alternative specification. The resulting model ensembles and standardized datasets are stored together, allowing the estimated lot values, model effects, and predictive performance to be compared across different choices of standard-house parameters.
 
 ```{r Sensitivity to standard house parameters, eval=FALSE, echo=TRUE, warning=FALSE}
 
@@ -3714,6 +3711,8 @@ if (load) {
 
 ```
 
+## 8. Model interpretation
+The code below performs valuations using the combined model framework on a set of simplified, fictitious properties, which are described in the main paper. 
 
 ```{r Model interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -3859,6 +3858,7 @@ make_interpretation_results <- function(model, model_name) {
                                               adjustment_windturbine_distance *
                                               adjustment_ocean_view *
                                               adjustment_lake_view *
+                                              adjustment_forest_size *
                                               adjustment_municipality_type,
       
                         adjustment_building = adjustment_type_base * 
@@ -3866,9 +3866,11 @@ make_interpretation_results <- function(model, model_name) {
                                               adjustment_year_built *
                                               adjustment_year_rebuilt *
                                               adjustment_living_space *
+                                              adjustment_house_type *
                                               adjustment_roof_type *
                                               adjustment_wall_type *
-                                              adjustment_heating_type,
+                                              adjustment_heating_type * 
+                                              adjustment_number_of_bathrooms,
       
                         adjustment_total = adjustment_location * adjustment_building,
                         
@@ -3921,7 +3923,7 @@ saveRDS(results_all_models, "saved_files/results_interpretation_combined_models.
 ```
 
 
-# Paper III: Other approaches 
+# Paper III: On the Accuracy of Hedonic Real Estate Models 
 
 ## Learning curves
 The code below fits a list of models to increasing fractions of the training set and assesses their validation MALE. Learning curves for each municipality type are then plotted.
