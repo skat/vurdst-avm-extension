@@ -7,6 +7,14 @@ header-includes:
   - \usepackage{xcolor}
 ---
 
+This notebook provides a walkthrough of the analysis and results described in several papers, which as of June 2026 are: 
+
+1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" (in review)
+2) "Property and Land value Predictions with Generalized Additive Models" (in preparation)
+3) "On the Accuracy of Hedonic Real Estate Models" (in preparation)
+
+# 1. Reproducibility and setup 
+
 ```{r setup, eval=TRUE, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
@@ -60,16 +68,12 @@ for (f in c("saved_files", "checkpoints")) {
 }
 ```
 
-This notebook provides a walkthrough of the analysis and results described in several papers, which as of June 2026 are: 
 
-1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" (in review)
-2) "Property and Land value Predictions with Generalized Additive Models" (in preparation)
-3) "On the Accuracy of Hedonic Real Estate Models" (in preparation)
 
-# Dataset 
+# 2. Data 
 
-## 1. Description
-The analysis is based on a dataset of single-family home sales, single-family lot sales and properties in Denmark from 1 January 2014 to 1 January 2024. The dataset, included as a .rds file in this repository, is loaded and inspected below. In the subsequent cells histograms of selected variables are produced. These histograms are for the raw variables before any imputations and variable conversions take place.
+## 2.1 The dataset
+The analysis is based on a dataset of single-family home sales, single-family lot sales and properties in Denmark from 1 January 2014 to 1 January 2024. The dataset, included as a .rds file in this repository, is loaded and inspected below.
 
 ```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE}
 
@@ -118,6 +122,8 @@ plot_geographic <- ggplot(dataset, aes(coordinate_east, coordinate_north)) +
 plot_geographic
 
 ```
+## 2.2 Descriptive statistics
+In the subsequent cells histograms of selected variables are produced. These histograms are for the raw variables before any imputations and variable conversions take place.
 
 ```{r Continuous variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
@@ -239,7 +245,7 @@ wrap_plots(histograms_cat, ncol = 3)
 ```
 
 
-## 2. Variable conversions and imputation
+## 2.3 Transformation and imputation
 Prior to model fitting a set of variable conversions and imputations are performed in order to: 
 
 1) Convert categorical variables to factors
@@ -305,7 +311,7 @@ which(is.na(subset(dataset, type == "Property sale")), arr.ind = TRUE)
 
 ```
 
-## 3. Cross-Validation 
+## 2.4 Cross-validation design 
 The code below partitions the property sales and lot sales into a standard four-fold cross-validation split ($K=4$). The resulting folds are subsequently used both to estimate out-of-sample predictive performance and to assess the robustness of the fitted model to perturbations of the training data.
 
 ```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
@@ -336,9 +342,9 @@ table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 ```
 
 
-# Paper I: "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" 
+# 3. Paper I: "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" 
 
-## 1. Model training
+## 3.1 Model specification and fitting
 The code below fits the GAM model structure described in "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". A model is fitted for each cross-validation fold using the remaining $K-1$ folds as the training data. 
 
 ```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
@@ -427,7 +433,7 @@ if (load) {
 ```
 
 
-## 2. Partial effects
+## 3.2 Partial effects
 
 #### Spatial smooths 
 The code below extracts the spatial smooth for each model and plots it alongside the log-scale standard error. The plotting relies on a premade spatial grid of Denmark, where ocean and land are marked. 
@@ -820,7 +826,7 @@ wrap_plots(plot_factors, ncol = 2) +
 ```
 
 
-## 3. Predictive performance
+## 3.3 Predictive performance
 The code below extracts various residual types and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
 
@@ -1087,7 +1093,7 @@ print(plot_errors)
 ```
 
 
-## 4. Model interpretation
+## 3.4 Illustrative valuations
 The code below performs valuations using the fitted models a set of simplified, fictitious properties, which are described in the main paper. 
 
 ```{r Interpretation property models, eval=TRUE, echo=TRUE, warning=FALSE}
@@ -1286,7 +1292,7 @@ saveRDS(results_all_models, "saved_files/results_interpretation_property_models.
 
 
 
-## 5. Uncertainty detection
+## 3.5 Preditiction uncertainty and stability
 The code below flags outliers based on both the GAM-based uncertainty estimate of Model 1 as well as the ensemble-based robustness measure described in the main paper. 
 
 ```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
@@ -1374,7 +1380,7 @@ print(plot_outliers_geographically)
 
 ```
 
-## 6. Model checking
+## 3.6 Model checking
 
 ### Standard Model Checks
 The code below plots various standard diagnostics for Model 1 using the appraise() function from the gratia library as described in https://gavinsimpson.github.io/gratia/reference/appraise.html. 
@@ -1679,9 +1685,9 @@ print(plot_basis)
 
 ```
 
-# Paper II: "Property and Land Value Predictions with Generalized Additive Models" 
+# 4. Paper II: "Property and Land Value Predictions with Generalized Additive Models" 
 
-### 1. Standardization
+### 4.1 Standard-house construction
 In the code below, lot sales and properties are augmented with a fictitious single-family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
 
 ```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
@@ -1741,7 +1747,7 @@ if (load) {
 ```
 
 
-### 2. Lot-value models
+### 4.2 Model specifications and fitting
 The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data.
 
 ```{r Lot-value models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
@@ -1968,7 +1974,7 @@ if (load) {
 
 ```
 
-## 3. Partial effects
+## 4.3 Partial effects
 
 #### Spatial smooths 
 The code below extracts and visualizes the spatial smooths from each of the three lot-value model ensembles. For every fold-specific model, the estimated spatial effect and its standard error are evaluated on a common coordinate grid covering Denmark. For the combined model, both the shared spatial surface and the sale-type-specific spatial adjustment are extracted.
@@ -2616,7 +2622,7 @@ wrap_plots(plot_factors, ncol = 2) +
 
 ```
 
-## 4. Predictive performance
+## 4.4 Predictive performance
 The code below extracts various residual types for each type of lot model and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
 ```{r Performance lot sales, eval=TRUE, echo=TRUE, warning=FALSE}
@@ -2889,7 +2895,7 @@ print(plot_errors_lot_models)
 
 ```
 
-## 5. Stability analysis
+## 4.5 Prediction stability
 The code below evaluates the stability of predicted lot values across the fold-specific models for each of the three modelling approaches. All models within an ensemble are used to predict lot values for the same set of properties on the link scale. For each property, the mean prediction and the standard deviation across the fold-specific predictions are calculated. The standard deviation across the model ensembles is used as a measure of sensitivity to perturbations of the training data.
 
 ```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE}
@@ -3060,7 +3066,7 @@ wrap_plots(plot_ensemble_geographic, ncol = 2)
 
 ```
 
-## 6. Value decomposition
+## 4.6 Property-lot-building decomposition
 The code below decomposes predicted property values into estimated lot and building components for each modelling approach and cross-validation fold. For the direct and standard-property approaches, property values are taken from the previously fitted property models, while lot values are predicted using the corresponding lot model. For the combined approach, property, standardized-property, and lot values are generated from the same joint model by changing the sale type and building characteristics supplied at prediction.
 
 Building value is defined as the difference between the predicted property value and predicted lot value. The same decomposition is also calculated for the standardized property. The resulting values are summarized using measures of central tendency, dispersion, selected quantiles, building shares, values per square metre, and the frequency of negative building-value estimates.
@@ -3423,7 +3429,7 @@ saveRDS(plot_value_densities_combined, "saved_files/plot_value_densities_combine
 print(plot_value_densities_combined)
 ```
 
-## 7. Sensitivity analysis
+## 4.7 Standard-house sensitivty
 The code below examines how sensitive the lot-value estimates are to the choice of standard house. Several alternative specifications are considered by varying the reference dwelling’s living area and construction year while keeping the remaining building characteristics fixed.
 
 For each specification, the lot-sale and property data are standardized to the chosen reference house, and the fold-specific property models are used to calculate corresponding standard-property values. The original lot characteristics are then restored for the lot sales so that only the assumed building characteristics differ across specifications.
@@ -3702,7 +3708,7 @@ if (load) {
 
 ```
 
-## 8. Model interpretation
+## 4.8 Illustrative valuations
 The code below performs valuations using the combined model framework on a set of simplified, fictitious properties, which are described in the main paper. 
 
 ```{r Model interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
@@ -3914,9 +3920,9 @@ saveRDS(results_all_models, "saved_files/results_interpretation_combined_models.
 ```
 
 
-# Paper III: On the Accuracy of Hedonic Real Estate Models 
+# 5. Paper III: On the Accuracy of Hedonic Real Estate Models 
 
-## Learning curves
+## 5.1 Learning curves
 The code below fits a list of models to increasing fractions of the training set and assesses their validation MALE. Learning curves for each municipality type are then plotted.
 
 ```{r Learning curves, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
@@ -4011,7 +4017,7 @@ print(plot_learning_curves)
 ```
 
 
-## Market noise and other models
+## 5.2 Market noise and other models
 The code below estimates the market noise based on properties sold twice and compares this to the error obtained using our GAM model as well as an XGboost model. 
 
 ```{r Market noise, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
@@ -4317,7 +4323,7 @@ print(plot_market_noise)
 ```
 
 
-### Number of folds for model ensemble
+### 5.3 Number of folds for model ensemble
 The code below fits the model ensemble for numbers of fold for the model ensembles and examines the ensemble spread af a function of this.
 
 ```{r Number of folds, eval=FALSE, echo=TRUE, warning=FALSE, results='hide'}
@@ -4415,7 +4421,7 @@ print(plot_folds_spread)
 ```
 
 
-## Interplay between market noise and data scarcity
+## 5.4 Interplay between market noise and data scarcity
 The code below examines the interplay between and noise and data scarcity by examining the validation MALE in the 2D space of KNN-averaged sales densities and sales prices. 
 
 ```{r Interplay, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
