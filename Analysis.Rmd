@@ -345,7 +345,7 @@ table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 # 3. Paper I: "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" 
 
 ## 3.1 Model specification and fitting
-The code below fits the GAM model structure described in "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". A model is fitted for each cross-validation fold using the remaining $K-1$ folds as the training data. 
+The code below fits the GAM model structure described in "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System". A model is fitted for each cross-validation fold using the remaining $K-1$ folds as the training data. To isolate model sensitivity to changes in the training population, each model was fitted using the complete training sample (chunk.size = nrow(training_subset)). Using a single chunk reduces this source of numerical variation, making differences across cross-validation folds more directly interpretable as sensitivity to training-data perturbations (see https://stats.stackexchange.com/questions/659490/reproducibility-of-bam-mgcv-algorithm).
 
 ```{r Model training, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 fit_fold <- function(i, data, k_spatial, k_other = k_other, fraction = 1.0, checkpoint_prefix = "Model", save_checkpoint = TRUE) {
@@ -1748,7 +1748,7 @@ if (load) {
 
 
 ### 4.2 Model specifications and fitting
-The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data.
+The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data. To isolate model sensitivity to changes in the training population, each model was fitted using the complete training sample (chunk.size = nrow(training_subset)). Using a single chunk reduces this source of numerical variation, making differences across cross-validation folds more directly interpretable as sensitivity to training-data perturbations (see https://stats.stackexchange.com/questions/659490/reproducibility-of-bam-mgcv-algorithm).
 
 ```{r Lot-value models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
