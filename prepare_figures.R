@@ -26,7 +26,7 @@ legend_text_size <- 12
 ### Figures main paper ###
 
 ## Figure 1 ##
-dataset <- readRDS("dataset.rds")
+dataset <- readRDS("model_dataset.rds")
 dataset <- dataset %>% filter(type == "Property sale")
 
 dataset_municipalities <- dataset %>%
@@ -210,7 +210,7 @@ plot_log_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_log_errors.r
 plot_percentage_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_percentage_errors.rds")
 plot_errors <- readRDS("~/vurdst-avm-extension/saved_files/plot_errors.rds")
 
-plot_test_residuals_log <- plot_test_residuals_log+ guides(color = "none") + theme(legend.position = c(0.5, 0.1))
+plot_test_residuals_log <- plot_test_residuals_log + guides(color = "none") + theme(legend.position = c(0.5, 0.1))
 plot_test_residuals_percent <- plot_test_residuals_percent + guides(color = "none") + theme(legend.position = c(0.5, 0.1))
 plot_test_residuals <- plot_test_residuals + guides(color = "none") + theme(legend.position = c(0.5, 0.1))
 plot_log_errors <- plot_log_errors + guides(color = "none", linetype = guide_legend(title = NULL)) + theme(legend.position = c(0.45, 0.7))
@@ -294,9 +294,6 @@ ggplot2::ggsave("Paper_figures/Figure9.pdf", Figure9, width = 12, height = 5)
 concurvity_heatmap_est <- readRDS("saved_files/concurvity_heatmap_est.rds")
 
 ggplot2::ggsave("Paper_figures/Figure10.pdf", concurvity_heatmap_est$gtable, width = 12, height = 8)
-
-
-
 
 ### Figures SI ###
 
