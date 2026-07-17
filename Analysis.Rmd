@@ -1339,7 +1339,7 @@ plot_uncertainties <- ggplot(property_predictions, aes(x = sigma_Model1, y = sig
                       geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
                       geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
                       annotate("label",
-                               x = 0.075, y = 0.24,
+                               x = 0.15, y = 0.50,
                                label = label_expr,
                                parse = TRUE,
                                hjust = 0, vjust = 1,
@@ -1367,7 +1367,7 @@ plot_outliers_geographically <- ggplot() +
                                            aes(x = coordinate_east,
                                                y = coordinate_north,
                                                color = sigma_combined),
-                                           size = 1.0, alpha = 0.7) +
+                                           size = 2.0, alpha = 0.7) +
                                 scale_color_viridis_c(option = "plasma", name = expression(sigma["Combined"])) + 
                                 coord_fixed() +
                                 theme_void(base_size = 10) +
