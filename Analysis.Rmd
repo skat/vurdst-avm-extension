@@ -1339,7 +1339,7 @@ plot_uncertainties <- ggplot(property_predictions, aes(x = sigma_Model1, y = sig
                       geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
                       geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
                       annotate("label",
-                               x = 0.15, y = 0.50,
+                               x = 0.21, y = 0.475,
                                label = label_expr,
                                parse = TRUE,
                                hjust = 0, vjust = 1,
