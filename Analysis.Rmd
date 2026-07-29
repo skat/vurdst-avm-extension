@@ -287,16 +287,16 @@ dataset <- dataset %>% mutate(maximum_coverage_percentage = if_else(is.na(maximu
 dataset <- dataset %>% mutate(subdivision_size = if_else(is.na(subdivision_size), 700, subdivision_size))
 
 #impute NA in distance variables to their cap values 
-dataset <- dataset %>% mutate(across(c(lake_distance,
-                                       stream_distance,
-                                       coast_distance,
-                                       road_distance,
-                                       highway_distance,
-                                       train_station_distance,
-                                       railway_distance,
-                                       windturbine_distance),
-                                     ~ replace_na(., max(., na.rm = TRUE))))
+distance_caps <- c(lake_distance = 500,
+                   stream_distance = 1000,
+                   coast_distance = 1500,
+                   road_distance = 2000,
+                   highway_distance = 2000,
+                   train_station_distance = 2000,
+                   railway_distance = 1000,
+                   windturbine_distance = 3000)
 
+dataset <- dataset %>% mutate(across(all_of(names(distance_caps)), ~ replace_na(., distance_caps[cur_column()])))
 
 ### Auxiliary variables
 
