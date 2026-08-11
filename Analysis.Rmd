@@ -305,6 +305,21 @@ plot_grid(plots_combined, common_legend, ncol = 1, rel_heights = c(1, 0.04))
 
 ```{r Categorical variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
 
+# ------------------------------------------------------------------------------
+# Labels and plotting parameters
+# ------------------------------------------------------------------------------
+
+get_label <- function(var, labels_vec) {
+  
+  lbl <- tryCatch(labels_vec[[var]], error = function(e) NULL)
+  if (is.null(lbl) || is.na(lbl)) var else lbl
+  
+}
+
+# ------------------------------------------------------------------------------
+# Categorical variables and display labels
+# ------------------------------------------------------------------------------
+
 variables_categorical <- c(house_type = "House type",
                            roof_type = "Roof type",
                            wall_type = "Wall type",
@@ -312,18 +327,169 @@ variables_categorical <- c(house_type = "House type",
                            municipality_type = "Municipality type",
                            province = "Province",
                            region = "Region",
-                           zone = "Zone")
+                           zone = "Zone",
+                           zoning_use_category = "Zoning use category")
 
 vars_cat <- intersect(names(variables_categorical), names(dataset))
 
-histograms_cat <- map(vars_cat, ~ plot_one(dataset, .x, get_label(.x, variables_categorical)))
+# ------------------------------------------------------------------------------
+# Common colours
+# ------------------------------------------------------------------------------
 
-saveRDS(histograms_cat, "saved_files/histograms_categorical.rds")
+type_colors <- c("Property sale" = "#0072B2", "Lot sale" = "#E69F00", "Property" = "#009E73")
 
-wrap_plots(histograms_cat, ncol = 3)
+# ------------------------------------------------------------------------------
+# Plot one categorical variable
+# ------------------------------------------------------------------------------
+
+plot_categorical <- function(df, var, label) {
+
+  plot_data <- df %>% select(type, value = all_of(var))
+
+  # --------------------------------------------------------------------------
+  # Summary information by dataset component
+  # --------------------------------------------------------------------------
+
+  summary_data <- plot_data %>%
+                  group_by(type) %>%
+                  summarise(n_available = sum(!is.na(value)),
+                            missing_pct = 100 * mean(is.na(value)),
+                            .groups = "drop") %>%
+                  filter(n_available > 0) %>%
+                  mutate(label = paste0(type,
+                                        ": n = ",
+                                        comma(n_available),
+                                        ", missing = ",
+                                        number(missing_pct, accuracy = 0.1),
+                                        "%"))
+
+
+  # --------------------------------------------------------------------------
+  # Category proportions within each dataset component
+  # --------------------------------------------------------------------------
+
+  bar_data <- plot_data %>%
+              filter(!is.na(value)) %>%
+              mutate(value = factor(value)) %>%
+              count(type, value, name = "n") %>%
+              group_by(type) %>%
+              mutate(proportion = n / sum(n)) %>%
+              ungroup()
+
+  if (nrow(bar_data) == 0L) {return(NULL)}
+
+
+  # --------------------------------------------------------------------------
+  # Keep category ordering common across all three dataset components
+  # --------------------------------------------------------------------------
+
+  category_order <- bar_data %>%
+                    group_by(value) %>%
+                    summarise(total = sum(n), .groups = "drop") %>%
+                    arrange(desc(total)) %>%
+                    pull(value) %>%
+                    as.character()
+
+  bar_data <- bar_data %>%
+              mutate(value = factor(value, levels = category_order))
+
+
+  # --------------------------------------------------------------------------
+  # Plot
+  # --------------------------------------------------------------------------
+
+  p <- ggplot(bar_data,
+              aes(x = value,
+                  y = proportion,
+                  fill = type)) +
+       geom_col(position = position_dodge(width = 0.8),
+                width = 0.72,
+                color = "white",
+                linewidth = 0.25) +
+       scale_fill_manual(values = type_colors,
+                         breaks = names(type_colors),
+                         drop = FALSE) +
+       scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.15))) +
+       labs(title = label, x = NULL, y = "Share", fill = NULL) +
+       theme_minimal(base_size = 11) +
+       theme(plot.title = element_text(size = 12, face = "bold"),
+             axis.text.x = element_text(angle = 40, hjust = 1),
+             panel.grid.minor = element_blank(),
+             panel.grid.major.x = element_blank(),
+             legend.position = "none")
+
+
+  # --------------------------------------------------------------------------
+  # Compact summary in upper-right corner
+  # --------------------------------------------------------------------------
+
+  summary_data <- summary_data %>%
+                  arrange(match(type, names(type_colors))) %>%
+                  mutate(vjust = seq(1, by = 1.25, length.out = n()))
+
+  for (i in seq_len(nrow(summary_data))) {
+
+    p <- p + annotate("text",
+                      x = Inf,
+                      y = Inf,
+                      label = summary_data$label[i],
+                      hjust = 1.02,
+                      vjust = summary_data$vjust[i],
+                      size = 3.1,
+                      color = type_colors[[summary_data$type[i]]])
+    
+  }
+
+  p
+  
+}
+
+
+# ------------------------------------------------------------------------------
+# Construct categorical plots
+# ------------------------------------------------------------------------------
+
+histograms_cat <- map(vars_cat, ~ plot_categorical(dataset, .x, get_label(.x, variables_categorical)))
+
+names(histograms_cat) <- vars_cat
+
+histograms_cat <- Filter(Negate(is.null), histograms_cat)
+
+
+# ------------------------------------------------------------------------------
+# Save
+# ------------------------------------------------------------------------------
+
+saveRDS(histograms_cat, "saved_files/histograms_categorical.rds") 
+
+
+# ------------------------------------------------------------------------------
+# Common legend
+# ------------------------------------------------------------------------------
+
+legend_plot <- ggplot(dataset,
+                      aes(x = 1, y = 1, fill = type)) +
+               geom_point(shape = 21, size = 3) +
+               scale_fill_manual(values = type_colors, breaks = names(type_colors)) +
+               labs(fill = NULL) +
+               theme_void() +
+               theme(legend.position = "bottom")
+
+common_legend <- get_legend(legend_plot)
+
+
+# ------------------------------------------------------------------------------
+# Display
+# ------------------------------------------------------------------------------
+
+plots_combined <- wrap_plots(histograms_cat, ncol = 3)
+
+plot_grid(plots_combined,
+          common_legend,
+          ncol = 1,
+          rel_heights = c(1, 0.05))
 
 ```
-
 
 ## 2.3 Transformation and imputation
 Prior to model fitting, categorical variables are converted to factors, missing values are imputed, and a small number of auxiliary variables are constructed. Continuous reference values are defined centrally and subsequently used both for model interpretation and, where appropriate, for imputation. This ensures that the same values are used consistently throughout preprocessing, model specification, and valuation.

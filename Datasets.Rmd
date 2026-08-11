@@ -252,48 +252,50 @@ round(prop.table(table(ejendomssalg_pcl$bygning.antal_etager)), 3) * 100 #Vælg 
 
 
 ejendomssalg_pcl <- ejendomssalg_pcl %>%
-                    filter(salg.ialtkoebesum >= 1e+5 & salg.ialtkoebesum <= 1.5e+7,
-                           vurinfo.registreretareal_fratrukket_vejareal <= 3000,
-                           vurinfo.registreretareal_fratrukket_vejareal >= 100,
+                    filter(between(salg.ialtkoebesum, 1e5, 1.5e7),
+                           between(vurinfo.registreretareal_fratrukket_vejareal, 100, 3000),
                            as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.opfoerelsesaar,
                            as.integer(format(as.Date(salg.koebsdato), "%Y")) >= bygning.omtilbygningsaar,
                            enhed.areal_til_beboelse == bygning.samlet_boligareal,
-                           enhed.areal_til_beboelse <= 400,
-                           enhed.areal_til_beboelse >= 50,
+                           between(enhed.areal_til_beboelse, 50, 400),
                            bygning.opfoerelsesaar >= 1900,
-                           delgrund.zone %in% c(1,2), #kun byzone og landzone
-                           enhed.enhedsanvendelse %in% c(120,130),
-                           bygning.bygningsanvendelse %in% c(120,130), 
-                           bygning.varmeinstallation %in% c(1,2,5,7),
-                           bygning.tagdaekningsmateriale %in% c(1,2,3,4,5),
-                           bygning.ydervaeggensmateriale %in% c(1,2,5), 
-                           enhed.antal_vaerelser %in% c(2,3,4,5,6,7,8,9,10),
-                           enhed.antal_badevaerelser %in% c(1,2,3),
-                           bygning.antal_etager %in% c(1,2))
+                           is.na(deljordstykke.plandata_plandata.maksbebygpct) | between(deljordstykke.plandata_plandata.maksbebygpct, 20, 80),
+                           is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | between(deljordstykke.plandata_plandata.udstykstoerrelse, 300, 1500),
+                           delgrund.zone %in% c(1,2),
+                           enhed.enhedsanvendelse %in% c(120, 130),
+                           bygning.bygningsanvendelse %in% c(120, 130),
+                           bygning.varmeinstallation %in% c(1, 2, 5, 7),
+                           bygning.tagdaekningsmateriale %in% c(1, 2, 3, 4, 5),
+                           bygning.ydervaeggensmateriale %in% c(1, 2, 5),
+                           enhed.antal_vaerelser %in% 2:10,
+                           enhed.antal_badevaerelser %in% 1:3,
+                           bygning.antal_etager %in% 1:2)
 
 
 vurderingsejendomme_pcl <- vurderingsejendomme_pcl %>%
-                           filter(vurinfo.registreretareal_fratrukket_vejareal <= 3000,
-                                  vurinfo.registreretareal_fratrukket_vejareal >= 100,
+                           filter(between(vurinfo.registreretareal_fratrukket_vejareal, 100, 3000),
                                   enhed.areal_til_beboelse == bygning.samlet_boligareal,
-                                  enhed.areal_til_beboelse <= 400,
-                                  enhed.areal_til_beboelse >= 50,
+                                  between(enhed.areal_til_beboelse, 50, 400),
                                   bygning.opfoerelsesaar >= 1900,
-                                  delgrund.zone %in% c(1,2), #kun byzone og landzone
+                                  is.na(deljordstykke.plandata_plandata.maksbebygpct) | between(deljordstykke.plandata_plandata.maksbebygpct, 20, 80),
+                                  is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | between(deljordstykke.plandata_plandata.udstykstoerrelse, 300, 1500),
+                                  delgrund.zone %in% c(1,2),
                                   enhed.enhedsanvendelse %in% c(120,130),
-                                  bygning.bygningsanvendelse %in% c(120,130), 
+                                  bygning.bygningsanvendelse %in% c(120, 130),
                                   bygning.varmeinstallation %in% c(1,2,5,7),
                                   bygning.tagdaekningsmateriale %in% c(1,2,3,4,5),
-                                  bygning.ydervaeggensmateriale %in% c(1,2,5), 
-                                  enhed.antal_vaerelser %in% c(2,3,4,5,6,7,8,9,10),
-                                  enhed.antal_badevaerelser %in% c(1,2,3),
-                                  bygning.antal_etager %in% c(1,2))
+                                  bygning.ydervaeggensmateriale %in% c(1,2,5),
+                                  enhed.antal_vaerelser %in% 2:10,
+                                  enhed.antal_badevaerelser %in% 1:3,
+                                  bygning.antal_etager %in% 1:2)
 
 
-grundsalg_pcl <- grundsalg_pcl %>% filter(salg.ialtkoebesum >= 1e+5 & salg.ialtkoebesum <= 1.5e+7,
-                                          vurinfo.registreretareal_fratrukket_vejareal <= 3000,
-                                          vurinfo.registreretareal_fratrukket_vejareal >= 100,
-                                          delgrund.zone %in% c(1,2)) #kun byzone og landzone
+grundsalg_pcl <- grundsalg_pcl %>%
+                 filter(between(salg.ialtkoebesum, 1e5, 1.5e7),
+                        between(vurinfo.registreretareal_fratrukket_vejareal, 100, 3000),
+                        is.na(deljordstykke.plandata_plandata.maksbebygpct) | between(deljordstykke.plandata_plandata.maksbebygpct, 20, 80),
+                        is.na(deljordstykke.plandata_plandata.udstykstoerrelse) | between(deljordstykke.plandata_plandata.udstykstoerrelse, 300, 1500),
+                        delgrund.zone %in% c(1,2))
                               
 
 
