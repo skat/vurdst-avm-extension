@@ -26,114 +26,141 @@ legend_text_size <- 12
 ### Figures main paper ###
 
 ## Figure 1 ##
-dataset <- readRDS("model_dataset.rds")
-dataset <- dataset %>% filter(type == "Property sale")
+municipality_type_colors <- c("Capital" = "#4E9F8E",
+                              "Commuter" = "#E98963",
+                              "Large city" = "#6F83B5",
+                              "Provincial" = "#C875A7",
+                              "Rural" = "#93B94B")
+
+
+dataset <- readRDS("model_dataset.rds") %>% filter(type == "Property sale")
 
 dataset_municipalities <- dataset %>%
-                          group_by(municipality) %>%
-                          mutate(mean_sales_price = mean(sales_price)) %>%
-                          select(municipality_type, municipality, mean_sales_price) %>%
-                          unique()
-
-dataset_municipalities <- dataset_municipalities %>%
-                          mutate(municipality = tolower(municipality)) %>%
-                          rename(kommune = municipality)
+                          group_by(municipality, municipality_type) %>%
+                          summarise(mean_sales_price = mean(sales_price, na.rm = TRUE), .groups = "drop") %>%
+                          mutate(kommune = tolower(municipality))
 
 
-# (a) Plot of municipality types
-municipality_type_plot <- plotDK(data = dataset_municipalities, id = "kommune", value = "municipality_type", niveau = "kommune") +
-                          geom_path() +
-                          scale_fill_brewer(name = "Municipality type", palette = "Set2") +
-                          labs(fill = "Municipality type") +
-                          theme(legend.position = c(0.775, 0.8),
-                                legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),  # moves title up from the color bar
+# ------------------------------------------------------------------------------
+# (a) Municipality types
+# ------------------------------------------------------------------------------
+
+municipality_type_plot <- plotDK(data = dataset_municipalities,
+                                 id = "kommune",
+                                 value = "municipality_type",
+                                 niveau = "kommune") +
+                          geom_path(color = "white", linewidth = 0.25) +
+                          scale_fill_manual(values = municipality_type_colors,
+                                            name = "Municipality type") +
+                          theme_void() +
+                          theme(legend.position = c(0.78, 0.82),
+                                legend.title = element_text(
+                                size = legend_title_size,
+                                margin = margin(b = 4)),
                                 legend.text = element_text(size = legend_text_size),
-                                legend.title.align = 0.5)
+                                legend.key.height = unit(0.45, "cm"),
+                                legend.key.width = unit(0.45, "cm"),
+                                legend.background = element_rect(fill = alpha("white", 0.85), color = NA),
+                                plot.margin = margin(5, 5, 5, 5))
 
-# (b) Density distribution of sales prices colored by municipality type
-sales_price_density_plot <- ggplot(dataset, aes(x = sales_price / 1e6, color = municipality_type, fill = municipality_type)) +
-                            geom_density(alpha = 0.3) +
-                            scale_color_brewer(palette = "Set2", name = "Municipality type") +
-                            scale_fill_brewer(palette = "Set2", name = "Municipality type") +
-                            labs(x = "Sales price [million DKK]", y = "Density") +
-                            theme(legend.position = c(0.8, 0.8),
-                                  legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),
-                                  legend.text = element_text(size = legend_text_size),
-                                  axis.text = element_text(size = axis_size),
-                                  legend.title.align = 0.5)
 
-# (c) Plot of average sales price by municipality
-mean_sales_price_histogram <- ggplot(dataset_municipalities, aes(x = mean_sales_price / 1e6, fill = municipality_type)) +
-                              geom_histogram(binwidth = 0.1, color = "black", position = "stack", alpha = 0.85) +
-                              scale_fill_brewer(name = "Municipality type", palette = "Set2") +
-                              labs(x = "Mean sales price [million DKK]", y = "Number of municipalities") +
-                              theme(legend.position = c(0.8, 0.8),
-                                    legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),
-                                    legend.text = element_text(size = legend_text_size),
-                                    axis.text = element_text(size = axis_size),
-                                    legend.title.align = 0.5)
+# ------------------------------------------------------------------------------
+# (b) Sales-price distributions
+# ------------------------------------------------------------------------------
 
-#combine everything
-sales_price_density_plot <- sales_price_density_plot + theme(legend.position = "none")
-mean_sales_price_histogram <- mean_sales_price_histogram + theme(legend.position = "none")
+sales_price_density_plot <- ggplot(dataset,
+                                   aes(x = sales_price / 1e6,
+                                       color = municipality_type,
+                                       fill = municipality_type)) +
+                                   geom_density(alpha = 0.18,
+                                                linewidth = 0.9,
+                                                adjust = 1) +
+                                   scale_color_manual(values = municipality_type_colors) +
+                                   scale_fill_manual(values = municipality_type_colors) +
+                                   coord_cartesian(xlim = c(0, 15)) +
+                                   labs(x = "Sales price [million DKK]",
+                                        y = "Density") +
+                                   theme_minimal() +
+                                   theme(legend.position = "none",
+                                         axis.text = element_text(size = axis_size),
+                                         axis.title = element_text(size = axis_size),
+                                         panel.grid.minor = element_blank(),
+                                         panel.grid.major = element_line(linewidth = 0.3, color = "grey85"),
+                                         plot.margin = margin(5, 5, 8, 5))
 
-right_column <- sales_price_density_plot / mean_sales_price_histogram  # stacked with "/"
 
-# Combine with (a) on the left
-Figure1 <- municipality_type_plot | right_column  # side-by-side with "|"
+# ------------------------------------------------------------------------------
+# (c) Mean sales price by municipality
+# ------------------------------------------------------------------------------
 
-# Add annotation tags
+mean_sales_price_plot <- ggplot(dataset_municipalities,
+                                aes(x = mean_sales_price / 1e6,
+                                    y = municipality_type,
+                                    color = municipality_type)) +
+                         geom_jitter(height = 0.16,
+                                     width = 0,
+                                     size = 2.2,
+                                     alpha = 0.75) +
+                         geom_point(data = dataset_municipalities %>%
+                                           group_by(municipality_type) %>%
+                                           summarise(median_price = median(mean_sales_price / 1e6), .groups = "drop"),
+                                    aes(x = median_price, y = municipality_type),
+                                    inherit.aes = FALSE,
+                                    shape = 18,
+                                    size = 2,
+                                    color = "black") +
+                        scale_color_manual(values = municipality_type_colors) +
+                        labs(x = "Mean sales price [million DKK]", y = NULL) +
+                        theme_minimal() +
+                        theme(legend.position = "none",
+                              axis.text = element_text(size = axis_size),
+                              axis.title = element_text(size = axis_size),
+                              panel.grid.minor = element_blank(),
+                              panel.grid.major.y = element_blank(),
+                              panel.grid.major.x = element_line(linewidth = 0.3, color = "grey85"),
+                              plot.margin = margin(8, 5, 5, 5))
+
+
+# ------------------------------------------------------------------------------
+# Combine panels
+# ------------------------------------------------------------------------------
+
+right_column <- sales_price_density_plot / mean_sales_price_plot + plot_layout(heights = c(1, 1))
+
+Figure1 <- municipality_type_plot | right_column + plot_layout(widths = c(1.45, 1))
+
 Figure1 <- Figure1 +
-           plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") +
-           plot_layout(ncol = 2, widths = c(1.5, 1))
+           plot_annotation(tag_levels = "a",
+                           tag_prefix = "(",
+                           tag_suffix = ")",
+           theme = theme(plot.tag = element_text(size = legend_text_size)))
+
+ggplot2::ggsave("Paper_figures/Figure1.pdf", Figure1, width = 9.5, height = 4)
 
 
 
-ggplot2::ggsave("Paper_figures/Figure1.pdf", Figure1, width = 9.5, height = 6)
-
-
-## Figure 2 ## This is edited manually
-
-dataset_municipalities <- dataset_municipalities %>% filter(kommune != "bornholm")
-
-municipality_type_plot <- plotDK(data = dataset_municipalities, id = "kommune", value = "municipality_type", niveau = "kommune") +
-                          geom_path() +
-                          scale_fill_brewer(name = "Municipality Type", palette = "Set2") +
-                          labs(fill = "Municipality Type") +
-                          theme(legend.position = c(0.775, 0.8),
-                                legend.title = element_text(size = legend_title_size, margin = margin(b = 5)),  # moves title up from the color bar
-                                legend.text = element_text(size = legend_text_size),
-                                legend.title.align = 0.5)
-
-Figure2 <- municipality_type_plot + theme(legend.position = "none")#fjern legend
-
-
-ggplot2::ggsave("Paper_figures/Figure2.pdf", Figure2, width = 6, height = 6)
-
-
-
-## Figure 3 ##
+## Figure 2 ##
 plot_spatial_smooths <- readRDS("saved_files/plot_spatial_smooths.rds")
 
 # 1 = effect of model 1
-Fig3a <- plot_spatial_smooths[[1]]
+Fig2a <- plot_spatial_smooths[[1]]
 
 # Zoomed-in version of the same plot (keeps fixed aspect)
-Fig3b <- plot_spatial_smooths[[1]] +
+Fig2b <- plot_spatial_smooths[[1]] +
          coord_cartesian(xlim = c(690000, 740000), ylim = c(6150000, 6200000)) +
          guides(fill = "none")
 
 
 # 2 = SE of model 1
-Fig3c <- plot_spatial_smooths[[2]]
+Fig2c <- plot_spatial_smooths[[2]]
 
 # 3 = effect of model 2 (example)
-Fig3d <- plot_spatial_smooths[[9]]
+Fig2d <- plot_spatial_smooths[[9]]
 
 #wrap plots
-plots <- list(Fig3a, Fig3b, Fig3c, Fig3d)
+plots <- list(Fig2a, Fig2b, Fig2c, Fig2d)
 
-Figure3 <- wrap_plots(plots, ncol = 2) +
+Figure2 <- wrap_plots(plots, ncol = 2) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") &
            theme(legend.position = c(0.7, 0.8),
                  legend.text = element_text(size = legend_text_size),
@@ -142,12 +169,10 @@ Figure3 <- wrap_plots(plots, ncol = 2) +
                  legend.justification = "center")
 
 
-ggplot2::ggsave("Paper_figures/Figure3.pdf", Figure3, width = 8.2, height = 6)
-ggsave("Paper_figures/Figure3.png", Figure3, width = 8.2, height = 6, dpi = 300)
+ggplot2::ggsave("Paper_figures/Figure2.pdf", Figure2, width = 8.2, height = 6)
 
 
-
-## Figure 4 ##
+## Figure 3 ##
 plot_smooths <- readRDS("saved_files/plot_smooths.rds")
 
 smooths <- c("sales_date_numeric", "year_built", "living_space", "coast_distance", "ocean_view", "train_station_distance")
@@ -156,11 +181,9 @@ selected_plots <- plot_smooths[smooths]
 
 #strip titles
 
-selected_plots <- lapply(selected_plots, function(p) {
-  p + labs(title = NULL)
-})
+selected_plots <- lapply(selected_plots, function(p) {p + labs(title = NULL)})
 
-Figure4 <- wrap_plots(selected_plots, ncol = 3) +
+Figure3 <- wrap_plots(selected_plots, ncol = 3) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") +
            plot_layout(guides = "collect") &
            theme(legend.position = "bottom",
@@ -171,11 +194,11 @@ Figure4 <- wrap_plots(selected_plots, ncol = 3) +
                  legend.justification = "center")
 
 
-ggplot2::ggsave("Paper_figures/Figure4.pdf", Figure4, width = 12.5, height = 6)
+ggplot2::ggsave("Paper_figures/Figure3.pdf", Figure3, width = 12.5, height = 6)
 
 
 
-## Figure 5 ##
+## Figure 4 ##
 plot_factors <- readRDS("saved_files/plot_factors.rds")
 
 factors <- c("municipality_type", "house_type", "roof_type", "heating_type")
@@ -184,11 +207,9 @@ selected_plots <- plot_factors[factors]
 
 #strip titles
 
-selected_plots <- lapply(selected_plots, function(p) {
-  p + labs(title = NULL)
-})
+selected_plots <- lapply(selected_plots, function(p) {p + labs(title = NULL)})
 
-Figure5 <- wrap_plots(selected_plots, ncol = 2) +
+Figure4 <- wrap_plots(selected_plots, ncol = 2) +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") +
            plot_layout(guides = "collect") &
            theme(legend.position = "bottom",
@@ -199,7 +220,12 @@ Figure5 <- wrap_plots(selected_plots, ncol = 2) +
                  legend.justification = "center")
 
 
-ggplot2::ggsave("Paper_figures/Figure5.pdf", Figure5, width = 13, height = 9)
+ggplot2::ggsave("Paper_figures/Figure4.pdf", Figure4, width = 13, height = 9)
+
+
+## Figure 5 ##
+Figure5 <- readRDS("saved_files/plot_illustrative_properties.rds")
+ggplot2::ggsave("Paper_figures/Figure5.pdf", Figure5, width = 9.5, height = 6)
 
 
 ## Figure 6 ##
@@ -236,12 +262,12 @@ ggplot2::ggsave("Paper_figures/Figure6.pdf", Figure6, width = 12, height = 6)
 
 ## Figure 7 ##
 plot_uncertainties <- readRDS("saved_files/plot_uncertainties.rds")
-plot_outliers_geographically <- readRDS("saved_files/plot_outliers_geographically.rds")
+plot_uncertainty_geographic <- readRDS("saved_files/plot_uncertainty_geographic.rds")
 
 plot_uncertainties <- plot_uncertainties + guides(shape = "none", color = "none") + theme(axis.text = element_text(size = axis_size))
-plot_outliers_geographically <- plot_outliers_geographically + xlim(440000, 750000) + theme(legend.position = c(1.0, 0.8))
+plot_uncertainty_geographic <- plot_uncertainty_geographic + theme(legend.position = c(0.8, 0.8))
 
-Figure7 <- plot_uncertainties + plot_outliers_geographically +
+Figure7 <- plot_uncertainties + plot_uncertainty_geographic +
            plot_annotation(tag_levels = "a", tag_prefix = "(", tag_suffix = ")") +
            plot_layout(widths = c(1, 1.3))
 

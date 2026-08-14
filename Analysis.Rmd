@@ -143,12 +143,12 @@ plot_continuous <- function(df, var, label) {
                             zero_pct = 100 * mean(value == 0, na.rm = TRUE),
                             .groups = "drop") %>%
                   filter(n_available > 0) %>%
-    mutate(label = paste0(type, ": n = ", 
-                          comma(n_available), 
-                          ", missing = ", 
-                          number(missing_pct, accuracy = 0.1), 
-                          "%, zero = ", 
-                          number(zero_pct, accuracy = 0.1), "%"))
+                  mutate(label = paste0(type, ": n = ", 
+                         comma(n_available), 
+                         ", missing = ", 
+                         number(missing_pct, accuracy = 0.1), 
+                         "%, zero = ", 
+                         number(zero_pct, accuracy = 0.1), "%"))
 
 
   # --------------------------------------------------------------------------
@@ -226,6 +226,7 @@ plot_continuous <- function(df, var, label) {
   }
 
   p
+
 }
 
 
@@ -304,17 +305,6 @@ plot_grid(plots_combined, common_legend, ncol = 1, rel_heights = c(1, 0.04))
 ```
 
 ```{r Categorical variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
-
-# ------------------------------------------------------------------------------
-# Labels and plotting parameters
-# ------------------------------------------------------------------------------
-
-get_label <- function(var, labels_vec) {
-  
-  lbl <- tryCatch(labels_vec[[var]], error = function(e) NULL)
-  if (is.null(lbl) || is.na(lbl)) var else lbl
-  
-}
 
 # ------------------------------------------------------------------------------
 # Categorical variables and display labels
@@ -618,12 +608,14 @@ assign_cv_folds <- function(data, N, seed = 123) {
 
   set.seed(seed)
 
-  data %>% mutate(validation_set = sample(rep(seq_len(N), length.out = n())), .rand = runif(n()))
+  data %>% 
+  group_by(municipality) %>% #try to keep at least one municipality in each fold for parametric model
+  mutate(validation_set = sample(rep(seq_len(N), length.out = n())), .rand = runif(n())) %>% 
+  ungroup()
 
 }
 
 dataset_property_sales_cv <- assign_cv_folds(dataset_property_sales, N = N, seed = 123)
-
 dataset_lot_sales_cv <- assign_cv_folds(dataset_lot_sales, N = N, seed = 123)
 
 table(dataset_property_sales_cv$validation_set, useNA = "ifany")
@@ -1068,22 +1060,42 @@ parametric_n_points <- 22
 parametric_point_size <- 2.0
 
 
+# ------------------------------------------------------------------------------
+# Helper: extract centred linear coefficient from parametric benchmark
+# ------------------------------------------------------------------------------
+
+get_parametric_beta <- function(model, var) {
+
+  coef_names <- names(coef(model))
+
+  candidates <- coef_names[startsWith(coef_names, paste0("I(", var, " - "))]
+
+  if (length(candidates) != 1) {return(NA_real_)}
+
+  unname(coef(model)[candidates])
+}
+
+
 for (var in names(smooth_variables)) {
 
   # --------------------------------------------------------------------------
   # Municipality-type interacting GAM: all four ensemble members
   # --------------------------------------------------------------------------
 
-  smooth_dfs_gam2 <- lapply(names(models_gam2),
-    
-      function(model_name) {
+  smooth_dfs_gam2 <- lapply(
+    names(models_gam2),
+    function(model_name) {
 
       mod <- models_gam2[[model_name]]
 
-      df <- tryCatch(smooth_estimates(mod, 
-                                      smooth = paste0("s(", var, ")"), 
-                                      partial_match = TRUE),
-                     error = function(e) NULL)
+      df <- tryCatch(
+        smooth_estimates(
+          mod,
+          smooth = paste0("s(", var, ")"),
+          partial_match = TRUE
+        ),
+        error = function(e) NULL
+      )
 
       if (!is.null(df)) {df$Model <- sub("^Model", "Model ", model_name)}
 
@@ -1102,17 +1114,24 @@ for (var in names(smooth_variables)) {
   # Nationwide GAM: Model 1 only
   # --------------------------------------------------------------------------
 
-  nationwide_df <- tryCatch(smooth_estimates(models_gam1[["Model1"]],
-                                             smooth = paste0("s(", var, ")"),
-                                             partial_match = TRUE),
-                            error = function(e) NULL)
+  nationwide_df <- tryCatch(
+    smooth_estimates(
+      models_gam1[["Model1"]],
+      smooth = paste0("s(", var, ")"),
+      partial_match = TRUE
+    ),
+    error = function(e) NULL
+  )
 
-  if (!is.null(nationwide_df)) {
+  nationwide_points <- NULL
 
-    point_idx <- unique(round(seq(1, nrow(nationwide_df), length.out = min(nationwide_n_points, nrow(nationwide_df)))))
+  if (!is.null(nationwide_df) && nrow(nationwide_df) > 0) {
 
-    nationwide_points <- nationwide_df[point_idx,]
-    
+    point_idx <- unique(round(seq(1,
+                        nrow(nationwide_df),
+                        length.out = min(nationwide_n_points, nrow(nationwide_df)))))
+
+    nationwide_points <- nationwide_df[point_idx, ]
   }
 
 
@@ -1120,20 +1139,18 @@ for (var in names(smooth_variables)) {
   # Parametric benchmark: Model 1 only
   # --------------------------------------------------------------------------
 
-  parametric_df <- NULL
+  parametric_points <- NULL
 
-  if (var %in% names(parametric_effects)) {
+  beta <- get_parametric_beta(models_parametric[["Model1"]], var)
 
-    parametric_df <- parametric_effects[[var]] %>%
-                     filter(Model == "Model 1")
+  if (!is.na(beta) && var %in% names(reference_values)) {
 
-    if (nrow(parametric_df) > 0) {
+    x_parametric <- seq(min(combined_df[[var]], na.rm = TRUE),
+                        max(combined_df[[var]], na.rm = TRUE),
+                        length.out = parametric_n_points)
 
-      point_idx <- unique(round(seq(1,nrow(parametric_df), length.out = min(parametric_n_points, nrow(parametric_df)))))
-
-      parametric_points <- parametric_df[point_idx,]
-      
-    }
+    parametric_points <- tibble(x = x_parametric,
+                                effect = beta * (x_parametric - reference_values[[var]]))
   }
 
 
@@ -1165,51 +1182,25 @@ for (var in names(smooth_variables)) {
          alpha = 0.18,
          color = NA) +
 
-         # Municipality-type interacting GAM
-         geom_line(data = combined_df,
-                   aes(x = .data[[var]],
-                       y = .estimate,
-                       color = .data[[by_var_name]],
-                       linetype = Model,
-                       group = interaction(Model, .data[[by_var_name]])),
-                   linewidth = 1) +
+        # Municipality-type interacting GAM
+        geom_line(data = combined_df,
+                  aes(x = .data[[var]],
+                      y = .estimate,
+                      color = .data[[by_var_name]],
+                      linetype = Model,
+                      group = interaction(Model, .data[[by_var_name]])),
+                  linewidth = 1) +
 
-         labs(title = plot_title,
-              x = smooth_variables[[var]],
-              y = "Partial effect",
-              color = "Municipality type",
-              fill = "Municipality type",
-              linetype = "Model") +
+        labs(title = plot_title,
+             x = smooth_variables[[var]],
+             y = "Partial effect",
+             color = "Municipality type",
+             fill = "Municipality type",
+             linetype = "Model") +
 
         scale_color_brewer(palette = "Dark2", name = "Municipality type") +
+
         scale_fill_brewer(palette = "Dark2", name = "Municipality type")
-
-
-    if (!is.null(nationwide_df)) {
-
-      p <- p + geom_point(data = nationwide_points,
-                          aes(x = .data[[var]],
-                              y = .estimate),
-                          inherit.aes = FALSE,
-                          color = "black",
-                          size = nationwide_point_size,
-                          shape = 4,
-                          show.legend = FALSE)
-    }
-
-
-    if (!is.null(parametric_df) && nrow(parametric_df) > 0) {
-
-      p <- p + geom_point(data = parametric_points,
-                          aes(x = x,
-                              y = effect),
-                          inherit.aes = FALSE,
-                          color = "black",
-                          size = parametric_point_size,
-                          shape = 8,
-                          show.legend = FALSE)
-      
-    }
 
 
   # ==========================================================================
@@ -1220,54 +1211,59 @@ for (var in names(smooth_variables)) {
 
     p <- ggplot() +
 
-      # Confidence interval for GAM2 Model 1
-      geom_ribbon(data = subset(combined_df, Model == "Model 1"),
-                  aes(x = .data[[var]],
-                      ymin = .estimate - 1.96 * .se,
-                      ymax = .estimate + 1.96 * .se),
-                  alpha = 0.25,
-                  color = NA) +
+         # Confidence interval for GAM2 Model 1
+         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
+         aes(x = .data[[var]],
+             ymin = .estimate - 1.96 * .se,
+             ymax = .estimate + 1.96 * .se),
+         alpha = 0.25,
+         color = NA) +
 
-      # Nationwide smooths from the interacting GAM
-      geom_line(data = combined_df,
-                aes(x = .data[[var]],
-                    y = .estimate,
-                    linetype = Model,
-                    group = Model),
-                color = "black",
-                linewidth = 1) +
+         # Nationwide smooths from the interacting GAM
+         geom_line(data = combined_df,
+                   aes(x = .data[[var]],
+                       y = .estimate,
+                       linetype = Model,
+                       group = Model),
+                   color = "black",
+                   linewidth = 1) +
 
-      labs(title = plot_title,
-           x = smooth_variables[[var]],
-           y = "Partial effect",
-           linetype = "Model")
-
-
-    if (!is.null(nationwide_df)) {
-
-      p <- p + geom_point(data = nationwide_points,
-                          aes(x = .data[[var]],
-                              y = .estimate),
-                          inherit.aes = FALSE,
-                          color = "black",
-                          size = nationwide_point_size,
-                          shape = 4,
-                          show.legend = FALSE)
-    }
+          labs(title = plot_title,
+               x = smooth_variables[[var]],
+               y = "Partial effect",
+               linetype = "Model")
+  }
 
 
-    # Parametric benchmark: black crosses
-    if (!is.null(parametric_df) && nrow(parametric_df) > 0) {
+  # --------------------------------------------------------------------------
+  # Nationwide GAM comparison
+  # --------------------------------------------------------------------------
 
-      p <- p + geom_point(data = parametric_points,
-                          aes(x = x,
-                              y = effect),
-                          inherit.aes = FALSE,
-                          color = "black",
-                          size = parametric_point_size,
-                          shape = 8,
-                          show.legend = FALSE)
-    }
+  if (!is.null(nationwide_points)) {
+
+    p <- p + geom_point(data = nationwide_points,
+                        aes(x = .data[[var]], y = .estimate),
+                        inherit.aes = FALSE,
+                        color = "black",
+                        size = nationwide_point_size,
+                        shape = 4,
+                        show.legend = FALSE)
+  }
+
+
+  # --------------------------------------------------------------------------
+  # Parametric benchmark comparison
+  # --------------------------------------------------------------------------
+
+  if (!is.null(parametric_points)) {
+
+    p <- p + geom_point(data = parametric_points,
+                        aes(x = x, y = effect),
+                        inherit.aes = FALSE,
+                        color = "black",
+                        size = parametric_point_size,
+                        shape = 8,
+                        show.legend = FALSE)
   }
 
 
@@ -1279,14 +1275,12 @@ for (var in names(smooth_variables)) {
                                  name = "Model",
                                  breaks = names(model_linetypes)) +
 
-           guides(fill = "none",
-                  color = guide_legend(
-                  order = 1),
-           linetype = guide_legend(order = 2,
-                                   override.aes = list(color = "black", linewidth = 1)))
+           guides(fill = "none", 
+                  color = guide_legend(order = 1),
+                  linetype = guide_legend(order = 2, 
+                                          override.aes = list(color = "black", linewidth = 1)))
 
   plot_smooths[[var]] <- p
-  
 }
 
 
@@ -1295,7 +1289,6 @@ for (var in names(smooth_variables)) {
 # ------------------------------------------------------------------------------
 
 saveRDS(plot_smooths, "saved_files/plot_smooths.rds")
-
 
 # ------------------------------------------------------------------------------
 # Display
@@ -1308,7 +1301,6 @@ theme(legend.position = "bottom",
       legend.title = element_text(size = 13, face = "bold"),
       legend.box = "horizontal",
       legend.justification = "center")
-
 ```
 
 
@@ -1730,7 +1722,630 @@ theme(legend.position = "bottom",
 ```
 
 
-## 3.3 Predictive performance
+## 3.3 Illustrative valuations
+The code below performs valuations using the fitted models of a set of chosen example properties. 
+
+```{r Interpretation property models, eval=TRUE, echo=TRUE, warning=FALSE}
+
+# The code below selects five actual valuation properties, chosen to illustrate
+# different characteristics and housing-market contexts:
+#
+#   A Rural        : old house
+#   B Capital      : close to the coast, in Gentofte
+#   C Commuter     : large living space, on Fyn
+#   D Large city   : recently constructed
+#   E Provincial   : large lot, preferably in Vestjylland
+#
+# Moderately extreme quantiles are used instead of absolute extrema to avoid
+# selecting unusual edge cases. The selected properties are valued with all
+# four fitted municipality-type GAMs and decomposed into multiplicative
+# location and structural adjustments.
+
+
+# ------------------------------------------------------------------------------
+# 1. Select five illustrative valuation properties
+# ------------------------------------------------------------------------------
+
+illustrative_selection <- tibble(property_label = LETTERS[1:5],
+                                 municipality_type = c("Rural",
+                                                       "Capital",
+                                                       "Commuter",
+                                                       "Large city",
+                                                       "Provincial"),
+                                 selection_variable = c("year_built",
+                                                        "coast_distance",
+                                                        "living_space",
+                                                        "year_built",
+                                                        "lot_size"),
+                                 target_quantile = c(0.10, 0.10, 0.90, 0.90, 0.90),
+                                 description = c("Old house",
+                                                 "Close to coast",
+                                                 "Large house",
+                                                 "New house",
+                                                 "Large lot")
+)
+
+
+select_illustrative_property <- function(data,
+                                         municipality_type_value,
+                                         selection_variable,
+                                         target_quantile) {
+
+  candidates <- data %>% filter(as.character(municipality_type) == municipality_type_value)
+
+
+  # Capital example: use Gentofte
+  if (municipality_type_value == "Capital") {
+
+    candidates_restricted <- candidates %>% filter(tolower(as.character(municipality)) == "gentofte")
+
+    if (nrow(candidates_restricted) > 0) {candidates <- candidates_restricted}
+  }
+
+
+  # Commuter example: use Fyn
+  if (municipality_type_value == "Commuter") {
+
+    candidates_restricted <- candidates %>% filter(tolower(as.character(province)) == "fyn")
+
+    if (nrow(candidates_restricted) > 0) {candidates <- candidates_restricted}
+  }
+
+
+  # Provincial example: use Vestjylland
+  if (municipality_type_value == "Provincial") {
+
+    candidates_restricted <- candidates %>% filter(tolower(as.character(province)) == "vestjylland")
+
+    if (nrow(candidates_restricted) > 0) {candidates <- candidates_restricted}
+  }
+
+
+  target_value <- quantile(candidates[[selection_variable]],
+                           probs = target_quantile,
+                           na.rm = TRUE,
+                           names = FALSE)
+
+
+  candidates %>% 
+  mutate(distance_to_target = abs(.data[[selection_variable]] - target_value)) %>%
+  slice_min(distance_to_target, n = 1, with_ties = FALSE) %>%
+  select(-distance_to_target)
+  
+}
+
+
+illustrative_properties <- pmap_dfr(illustrative_selection,
+
+  function(property_label,
+           municipality_type,
+           selection_variable,
+           target_quantile,
+           description) {
+
+    selected <- select_illustrative_property(data = dataset_properties,
+                                             municipality_type_value = municipality_type,
+                                             selection_variable = selection_variable,
+                                             target_quantile = target_quantile)
+
+    selected %>% mutate(property_label = property_label,
+                        example = municipality_type,
+                        example_description = description,
+                        selection_variable = selection_variable,
+                        selection_quantile = target_quantile,
+                        .before = 1)
+  }
+)
+
+
+# Inspect selected properties
+illustrative_properties %>% select(property_label,
+                                   example_description,
+                                   municipality,
+                                   municipality_type,
+                                   province,
+                                   year_built,
+                                   living_space,
+                                   lot_size,
+                                   coast_distance,
+                                   coordinate_east,
+                                   coordinate_north)
+
+
+# ------------------------------------------------------------------------------
+# 2. Helper for summing model terms
+# ------------------------------------------------------------------------------
+
+sum_matching_terms <- function(term_df, pattern) {
+
+  cols <- grep(pattern, names(term_df), value = TRUE)
+
+  if (length(cols) == 0L) {return(rep(0, nrow(term_df)))}
+
+  rowSums(term_df[, cols, drop = FALSE])
+}
+
+
+# ------------------------------------------------------------------------------
+# 3. Function for valuation decomposition
+# ------------------------------------------------------------------------------
+
+make_interpretation_results <- function(model,
+                                        model_name,
+                                        properties) {
+
+  model_data <- model.frame(model)
+
+  grid <- properties
+
+
+  # Ensure factor levels correspond to those used in the fitted model
+  for (var in intersect(names(grid), names(model_data))) {
+
+    if (is.factor(model_data[[var]])) {
+
+      grid[[var]] <- factor(grid[[var]], levels = levels(model_data[[var]]))
+      
+    }
+  }
+
+
+  # --------------------------------------------------------------------------
+  # Predict individual model terms
+  # --------------------------------------------------------------------------
+
+  terms <- as.data.frame(predict.gam(model, newdata = grid, type = "terms"))
+
+
+  # --------------------------------------------------------------------------
+  # Multiplicative adjustments
+  # --------------------------------------------------------------------------
+
+  adjustments <- tibble(
+
+    standard_price = rep(exp(coef(model)[1]), nrow(grid)),
+
+
+    # ------------------------------------------------------------------------
+    # Location characteristics
+    # ------------------------------------------------------------------------
+
+    adjustment_coordinates = exp(sum_matching_terms(terms, "^s\\(coordinate_east,coordinate_north\\)$")),
+
+    adjustment_sales_date = exp(sum_matching_terms(terms, "^s\\(sales_date_numeric\\):municipality_type")),
+
+    adjustment_coast_distance = exp(sum_matching_terms(terms, "^s\\(coast_distance\\)$")),
+
+    adjustment_lake_distance = exp(sum_matching_terms(terms, "^s\\(lake_distance\\)$")),
+
+    adjustment_stream_distance = exp(sum_matching_terms(terms, "^s\\(stream_distance\\)$")),
+
+    adjustment_road_distance = exp(sum_matching_terms(terms, "^s\\(road_distance\\)$")),
+
+    adjustment_highway_distance = exp(sum_matching_terms(terms, "^s\\(highway_distance\\)$")),
+
+    adjustment_train_station_distance = exp(sum_matching_terms(terms, "^s\\(train_station_distance\\)$")),
+
+    adjustment_railway_distance = exp(sum_matching_terms(terms, "^s\\(railway_distance\\)$")),
+
+    adjustment_windturbine_distance = exp(sum_matching_terms(terms, "^s\\(windturbine_distance\\)$")),
+
+    adjustment_ocean_view = exp(sum_matching_terms(terms, "^s\\(ocean_view\\)$")),
+
+    adjustment_lake_view = exp(sum_matching_terms(terms, "^s\\(lake_view\\)$")),
+
+    adjustment_forest_size = exp(sum_matching_terms(terms, "^s\\(forest_size\\)$")),
+
+    adjustment_municipality_type = exp(sum_matching_terms(terms, "^municipality_type$")),
+
+    # ------------------------------------------------------------------------
+    # Structural characteristics
+    # ------------------------------------------------------------------------
+
+    adjustment_year_built = exp(sum_matching_terms(terms, "^s\\(year_built\\):municipality_type")),
+
+    adjustment_year_rebuilt = exp(sum_matching_terms(terms, "^s\\(year_rebuilt\\):municipality_type")),
+
+    adjustment_living_space = exp(sum_matching_terms(terms, "^s\\(living_space\\):municipality_type")),
+
+    adjustment_lot_size = exp(sum_matching_terms(terms, "^s\\(lot_size\\):municipality_type")),
+
+    adjustment_number_of_bathrooms = exp(sum_matching_terms(terms, "^s\\(number_of_bathrooms\\):municipality_type")),
+
+    adjustment_house_type = exp(sum_matching_terms(terms, "^house_type$|^house_type:municipality_type$|^municipality_type:house_type$")),
+
+    adjustment_roof_type = exp(sum_matching_terms(terms, "^roof_type$|^roof_type:municipality_type$|^municipality_type:roof_type$")),
+
+    adjustment_wall_type = exp(sum_matching_terms(terms, "^wall_type$|^wall_type:municipality_type$|^municipality_type:wall_type$")),
+
+    adjustment_heating_type = exp(sum_matching_terms(terms, "^heating_type$|^heating_type:municipality_type$|^municipality_type:heating_type$")))
+
+
+    # --------------------------------------------------------------------------
+    # Aggregate location and structural adjustments
+    # --------------------------------------------------------------------------
+
+    adjustments <- adjustments %>%
+                   mutate(adjustment_location =
+                          adjustment_coordinates *
+                          adjustment_coast_distance *
+                          adjustment_lake_distance *
+                          adjustment_stream_distance *
+                          adjustment_road_distance *
+                          adjustment_highway_distance *
+                          adjustment_train_station_distance *
+                          adjustment_railway_distance *
+                          adjustment_windturbine_distance *
+                          adjustment_ocean_view *
+                          adjustment_lake_view *
+                          adjustment_forest_size *
+                          adjustment_municipality_type,
+
+
+                          adjustment_structural =
+                          adjustment_year_built *
+                          adjustment_year_rebuilt *
+                          adjustment_living_space *
+                          adjustment_lot_size *
+                          adjustment_number_of_bathrooms *
+                          adjustment_house_type *
+                          adjustment_roof_type *
+                          adjustment_wall_type *
+                          adjustment_heating_type,
+
+                          adjustment_total = adjustment_location * adjustment_structural,
+
+                          predicted_price = standard_price * adjustment_sales_date * adjustment_total)
+
+
+  # --------------------------------------------------------------------------
+  # Direct prediction for verification
+  # --------------------------------------------------------------------------
+
+  direct_prediction <- as.vector(predict.gam(model, newdata = grid, type = "response"))
+
+
+  adjustments <- adjustments %>%
+                 mutate(direct_prediction = direct_prediction,
+                        prediction_difference = predicted_price - direct_prediction,
+                        relative_prediction_difference = prediction_difference / direct_prediction)
+
+
+  # --------------------------------------------------------------------------
+  # Output
+  # --------------------------------------------------------------------------
+
+  bind_cols(grid, adjustments) %>%
+  mutate(Model = model_name, .before = 1)
+  
+}
+
+
+# ------------------------------------------------------------------------------
+# 4. Run all four municipality-type GAMs
+# ------------------------------------------------------------------------------
+
+results_all_models <- bind_rows(
+  
+  lapply(names(models_gam2),
+
+    function(model_name) {
+
+      make_interpretation_results(
+        model = models_gam2[[model_name]],
+        model_name = model_name,
+        properties = illustrative_properties
+      )
+    }
+  )
+)
+
+
+# ------------------------------------------------------------------------------
+# 5. Verify decomposition
+# ------------------------------------------------------------------------------
+
+decomposition_check <- results_all_models %>%
+                       summarise(max_absolute_difference = max(abs(prediction_difference), na.rm = TRUE),
+                                 max_relative_difference = max(abs(relative_prediction_difference), na.rm = TRUE))
+
+
+print(decomposition_check)
+
+stopifnot(decomposition_check$max_relative_difference < 1e-8)
+
+
+# ------------------------------------------------------------------------------
+# 6. Full decomposition for supplementary table
+# ------------------------------------------------------------------------------
+
+interpretation_decomposition <- results_all_models %>%
+                                select(Model,
+                                       property_label,
+                                       example,
+                                       example_description,
+                                       id,
+                                       municipality,
+                                       municipality_type,
+                                       province,
+                                       year_built,
+                                       year_rebuilt,
+                                       living_space,
+                                       lot_size,
+                                       number_of_bathrooms,
+                                       coast_distance,
+                                       standard_price,
+                                       adjustment_sales_date,
+                                  
+                                       # Location adjustments
+                                       adjustment_municipality_type,
+                                       adjustment_coordinates,
+                                       adjustment_coast_distance,
+                                       adjustment_lake_distance,
+                                       adjustment_stream_distance,
+                                       adjustment_road_distance,
+                                       adjustment_highway_distance,
+                                       adjustment_train_station_distance,
+                                       adjustment_railway_distance,
+                                       adjustment_windturbine_distance,
+                                       adjustment_ocean_view,
+                                       adjustment_lake_view,
+                                       adjustment_forest_size,
+                                  
+                                       # Structural adjustments
+                                       adjustment_year_built,
+                                       adjustment_year_rebuilt,
+                                       adjustment_living_space,
+                                       adjustment_lot_size,
+                                       adjustment_number_of_bathrooms,
+                                       adjustment_house_type,
+                                       adjustment_roof_type,
+                                       adjustment_wall_type,
+                                       adjustment_heating_type,
+                                  
+                                       # Aggregate adjustments
+                                       adjustment_location,
+                                       adjustment_structural,
+                                       adjustment_total,
+                                       predicted_price) %>%
+                                    arrange(property_label, Model)
+
+
+# ------------------------------------------------------------------------------
+# 7. Model 1 data for figure
+# ------------------------------------------------------------------------------
+
+plot_properties <- results_all_models %>%
+                   filter(Model == "Model1") %>%
+                   mutate(valuation_million = predicted_price / 1e6,
+                          info_label = sprintf("%s: %s in %s\nValuation: %.1f million DKK\nLocation: ×%.2f   Structural: ×%.2f",
+                                       property_label,
+                                       example_description,
+                                       municipality,
+                                       valuation_million,
+                                       adjustment_location,
+                                       adjustment_structural))
+
+
+# ------------------------------------------------------------------------------
+# 8. Reference property
+# ------------------------------------------------------------------------------
+
+reference_price <- results_all_models %>%
+                   filter(Model == "Model1") %>%
+                   summarise(reference_price = first(standard_price)) %>%
+                   pull(reference_price)
+
+
+reference_point <- tibble(
+
+  # Point constraints of the spatial smooth
+  coordinate_east = 697000,
+  coordinate_north = 6150000,
+  property_label = "R",
+  reference_price = reference_price,
+  adjustment_location = 1,
+  adjustment_structural = 1) %>%
+  mutate(info_label = sprintf("R: Reference property\nReference price: %.1f million DKK\nLocation: ×1.00   Structural: ×1.00", reference_price / 1e6))
+
+
+# ------------------------------------------------------------------------------
+# 9. Annotation positions
+# ------------------------------------------------------------------------------
+
+# Boxes are positioned manually to obtain a stable publication layout.
+#
+#   A: Rural old-house example in northern Jutland
+#   B: Gentofte example on the eastern side
+#   C: Fyn example in the southwest
+#   D: Aarhus example northwest of its property
+#   E: Vestjylland example on the western side
+
+box_positions <- tibble(
+
+  property_label = LETTERS[1:5],
+
+  box_x = c(
+    355000,   # A 
+    915000,   # B
+    355000,   # C
+    620000,   # D
+    355000    # E
+  ),
+
+  box_y = c(
+    6380000,  # A
+    6240000,  # B
+    6070000,  # C
+    6380000,  # D
+    6185000   # E
+  ),
+
+  box_hjust = c(
+    0,
+    1,
+    0,
+    0,
+    0
+  )
+)
+
+
+plot_properties <- plot_properties %>%
+                   left_join(box_positions, by = "property_label")
+
+
+# Reference box on the eastern side, below Gentofte
+reference_point <- reference_point %>%
+                   mutate(box_x = 915000,
+                          box_y = 6070000,
+                          box_hjust = 1)
+
+
+# ------------------------------------------------------------------------------
+# 10. Illustrative valuation figure
+# ------------------------------------------------------------------------------
+
+plot_illustrative_properties <- plot_spatial_smooths[[1]] +
+
+
+  # --------------------------------------------------------------------------
+  # Connector lines
+  # --------------------------------------------------------------------------
+
+  geom_segment(data = plot_properties,
+               aes(x = coordinate_east,
+                   y = coordinate_north,
+                   xend = box_x,
+                   yend = box_y),
+               inherit.aes = FALSE,
+               color = "black",
+               linewidth = 0.45) +
+
+  geom_segment(data = reference_point,
+               aes(x = coordinate_east,
+                   y = coordinate_north,
+                   xend = box_x,
+                   yend = box_y),
+               inherit.aes = FALSE,
+               color = "black",
+               linewidth = 0.45) +
+
+
+  # --------------------------------------------------------------------------
+  # Property markers A--E
+  # --------------------------------------------------------------------------
+
+  geom_point(data = plot_properties,
+             aes(x = coordinate_east, y = coordinate_north),
+             inherit.aes = FALSE,
+             shape = 21,
+             fill = "white",
+             color = "black",
+             size = 6.5,
+             stroke = 1) +
+
+  geom_text(data = plot_properties,
+            aes(x = coordinate_east,
+                y = coordinate_north,
+                label = property_label),
+            inherit.aes = FALSE,
+            color = "black",
+            size = 4.5,
+            fontface = "bold") +
+
+
+  # --------------------------------------------------------------------------
+  # Reference marker R
+  # --------------------------------------------------------------------------
+
+  geom_point(data = reference_point,
+             aes(x = coordinate_east, y = coordinate_north),
+             inherit.aes = FALSE,
+             shape = 22,
+             fill = "white",
+             color = "black",
+             size = 6.5,
+             stroke = 1) +
+
+  geom_text(data = reference_point,
+            aes(x = coordinate_east,
+                y = coordinate_north,
+                label = property_label),
+            inherit.aes = FALSE,
+            color = "black",
+            size = 4.3,
+            fontface = "bold") +
+
+
+  # --------------------------------------------------------------------------
+  # Property information boxes
+  # --------------------------------------------------------------------------
+
+  geom_label(data = plot_properties,
+             aes(x = box_x,
+                 y = box_y,
+                 label = info_label,
+                 hjust = box_hjust),
+             inherit.aes = FALSE,
+             vjust = 0.5,
+             size = 3.35,
+             lineheight = 1.15,
+             fill = "white",
+             color = "black",
+             linewidth = 0.4,
+             label.padding = unit(0.30, "lines")) +
+
+
+  # --------------------------------------------------------------------------
+  # Reference information box
+  # --------------------------------------------------------------------------
+
+  geom_label(data = reference_point,
+             aes(x = box_x,
+                 y = box_y,
+                 label = info_label,
+                 hjust = box_hjust),
+             inherit.aes = FALSE,
+             vjust = 0.5,
+             size = 3.35,
+             lineheight = 1.15,
+             fill = "white",
+             color = "black",
+             linewidth = 0.4,
+             label.padding = unit(0.30, "lines")) +
+
+
+  # --------------------------------------------------------------------------
+  # Figure extent
+  # --------------------------------------------------------------------------
+
+  coord_fixed(xlim = c(330000, 940000),
+              ylim = c(6020000, 6440000),
+              clip = "off") +
+
+  theme(plot.margin = margin(t = 10, r = 15, b = 10, l = 15))
+
+
+plot_illustrative_properties
+
+
+# ------------------------------------------------------------------------------
+# 11. Save results
+# ------------------------------------------------------------------------------
+
+saveRDS(illustrative_properties, "saved_files/illustrative_properties.rds")
+
+saveRDS(results_all_models, "saved_files/results_interpretation_property_models.rds")
+
+saveRDS(interpretation_decomposition, "saved_files/results_interpretation_decomposition.rds")
+
+saveRDS(plot_illustrative_properties, "saved_files/plot_illustrative_properties.rds")
+
+```
+
+
+## 3.4 Predictive performance
 The code below extracts various residual types and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
 
@@ -1747,12 +2362,16 @@ get_residuals <- function(models,
 
   if (is.null(names(models))) {names(models) <- paste0("Model", seq_along(models))}
 
-    residual_list <- future_lapply(seq_along(models),
+  residual_list <- future_lapply(seq_along(models),
                                  
     function(i) {
 
       model_name <- names(models)[i]
       model <- models[[i]]
+
+      # ----------------------------------------------------------------------
+      # Determine validation fold
+      # ----------------------------------------------------------------------
 
       if (fold_from_name) {
 
@@ -1762,19 +2381,80 @@ get_residuals <- function(models,
       } else {
 
         fold <- i
-        
+
       }
 
       if (is.na(fold)) {stop(sprintf("Could not determine the validation fold from model name '%s'.", model_name))}
 
-      predicted_sales_price <- as.numeric(predict(model, newdata = dataset, type = "response"))
+
+      # ----------------------------------------------------------------------
+      # Prepare prediction data
+      #
+      # Factor levels are forced to match those stored in the fitted model.
+      # This is particularly important for the parametric benchmark, which
+      # contains municipality fixed effects and several categorical variables.
+      # ----------------------------------------------------------------------
+
+      newdata <- dataset
+
+      if (!is.null(model$xlevels)) {
+
+        for (v in names(model$xlevels)) {
+
+          if (!v %in% names(newdata)) {
+            stop(sprintf("Variable '%s' required by model '%s' is missing from the prediction dataset.", v, model_name))
+          }
+
+          original_values <- as.character(newdata[[v]])
+
+          unknown_levels <- setdiff(unique(original_values[!is.na(original_values)]), model$xlevels[[v]])
+
+          if (length(unknown_levels) > 0) {
+
+            warning(sprintf(paste0("Specification '%s', model '%s': variable '%s' contains ",
+                                   "%d level(s) not present when the model was fitted: %s"),
+                    specification,
+                    model_name,
+                    v,
+                    length(unknown_levels),
+                    paste(unknown_levels, collapse = ", ")))
+          }
+
+          newdata[[v]] <- factor(original_values, levels = model$xlevels[[v]])
+          
+        }
+      }
+
+
+      # ----------------------------------------------------------------------
+      # Predict
+      # ----------------------------------------------------------------------
+
+      predicted_sales_price <- as.numeric(predict(model, newdata = newdata, type = "response"))
+
+      if (length(predicted_sales_price) != nrow(dataset)) {
+
+        stop(sprintf(paste0("Prediction length mismatch for specification '%s', model '%s': ",
+                            "%d predictions for %d observations."),
+             specification,
+             model_name,
+             length(predicted_sales_price),
+             nrow(dataset)))
+      }
 
       if (any(!is.finite(predicted_sales_price))) {
-        
-        warning(sprintf("Specification '%s', model '%s' produced non-finite predictions.",
+
+        warning(sprintf("Specification '%s', model '%s' produced %d non-finite predictions.",
                 specification,
-                model_name))
+                model_name,
+                sum(!is.finite(predicted_sales_price))))
+        
       }
+
+
+      # ----------------------------------------------------------------------
+      # Residuals
+      # ----------------------------------------------------------------------
 
       tibble(sales_price = dataset$sales_price,
              sales_date_numeric = dataset$sales_date_numeric,
@@ -1787,7 +2467,7 @@ get_residuals <- function(models,
              validation_set = dataset$validation_set,
              id = dataset$id,
              municipality_type = dataset$municipality_type,
-             Model =paste("Model", fold),
+             Model = paste("Model", fold),
              Specification = specification)
     }
   )
@@ -1813,21 +2493,15 @@ residual_df_gam2 <- get_residuals(models = models_gam2,
                                   specification = "Municipality-type GAM")
 
 
-residual_df_all <- bind_rows(residual_df_parametric,
-                             residual_df_gam1,
-                             residual_df_gam2) %>%
+residual_df_all <- bind_rows(residual_df_parametric, residual_df_gam1, residual_df_gam2) %>%
                    mutate(dataset_type = if_else(validation, "Validation", "Training"),
                           dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
                           Specification = factor(Specification, levels = c("Parametric model", "Nationwide GAM", "Municipality-type GAM")),
                           municipality_type = factor(municipality_type, levels = c("Capital", "Commuter", "Large city", "Provincial", "Rural")))
 
-saveRDS(residual_df_parametric, "saved_files/residual_df_parametric.rds")
-saveRDS(residual_df_gam1, "saved_files/residual_df_gam1.rds")
-saveRDS(residual_df_gam2, "saved_files/residual_df_gam2.rds")
-saveRDS(residual_df_all, "saved_files/residual_df_all.rds")
 
-# Preserve the original object name for any later GAM2-specific code
-residual_df <- residual_df_gam2
+# Save residual data
+saveRDS(residual_df_all, "saved_files/residual_df_all.rds")
 
 # ------------------------------------------------------------------------------
 # 3. Performance calculation
@@ -1842,8 +2516,7 @@ calculate_performance <- function(data) {
          MAPE = mean(abs(data$residual_sales_price_percent)),
          MAE = mean(abs(data$residual_sales_price)),
          PM20 = 100 * mean(abs(data$residual_sales_price_percent) <= 20),
-         COD = 100 * mean(
-         abs(data$ratio - median_ratio)) / median_ratio,
+         COD = 100 * mean(abs(data$ratio - median_ratio)) / median_ratio,
          PRD = mean(data$ratio) / (sum(data$predicted_sales_price) / sum(data$sales_price)))
 }
 
@@ -1855,8 +2528,9 @@ calculate_performance <- function(data) {
 performance_countrywide <- residual_df_all %>%
                            group_by(Specification, dataset_type) %>%
                            group_modify(~ calculate_performance(.x)) %>%
-                           ungroup() %>% 
-                           mutate(MAE = round(MAE, digits = 0), PRD = round(PRD, digits = 2)) %>%
+                           ungroup() %>%
+                           mutate(MAE = round(MAE, digits = 0),
+                                  PRD = round(PRD, digits = 2)) %>%
                            arrange(Specification, dataset_type)
 
 
@@ -1870,27 +2544,27 @@ performance_countrywide_display <- performance_countrywide %>%
 
 
 # Display countrywide table in notebook
-kable(performance_countrywide_display %>% 
-select(-N),
-digits = 2,
-caption = "Countrywide performance by model specification.",
-booktabs = TRUE) %>%
+kable(performance_countrywide_display %>%
+      select(-N),
+      digits = 2,
+      caption = "Countrywide performance by model specification.",
+      booktabs = TRUE) %>%
 kable_styling(full_width = FALSE, position = "center") %>%
 collapse_rows(columns = 1, valign = "top")
 
 
 # Save countrywide table as LaTeX
 tbl_countrywide_latex <- kable(performance_countrywide_display %>%
-                         select(-N),
-                         format = "latex",
-                         booktabs = TRUE,
-                         digits = 2,
-                         caption = "Countrywide performance by model specification.",
-                         label = "perf_countrywide_models") %>%
-                         kable_styling(full_width = FALSE,
-                         position = "center",
-                         latex_options = c("hold_position")) %>%
-                         collapse_rows(columns = 1, valign = "top", latex_hline = "major")
+                               select(-N),
+                               format = "latex",
+                               booktabs = TRUE,
+                               digits = 2,
+                               caption = "Countrywide performance by model specification.",
+                               label = "perf_countrywide_models") %>%
+kable_styling(full_width = FALSE,
+              position = "center",
+              latex_options = c("hold_position")) %>%
+collapse_rows(columns = 1, valign = "top", latex_hline = "major")
 
 writeLines(tbl_countrywide_latex, "saved_files/performance_countrywide_models.tex")
 
@@ -1907,21 +2581,31 @@ performance_municipality_type <- residual_df_all %>%
                                  group_by(Specification, dataset_type, municipality_type) %>%
                                  group_modify(~ calculate_performance(.x)) %>%
                                  ungroup() %>%
-                                 mutate(PRD = NA_real_, MAE = round(MAE, digits = 0))
+                                 mutate(PRD = NA_real_,
+                                        MAE = round(MAE, digits = 0))
 
 
-# Add "Countrywide" as another reporting group
+# Add Countrywide as another reporting group
 performance_countrywide_for_combined <- performance_countrywide %>%
                                         mutate(municipality_type = "Countrywide")
 
 
-performance_all_groups <- bind_rows(performance_countrywide_for_combined, performance_municipality_type) %>%
-                          mutate(municipality_type = factor(as.character(municipality_type), 
-                                                            levels = c("Countrywide", "Capital", "Commuter", "Large city", "Provincial", "Rural")),
-                                 Specification = factor(Specification, levels = c("Parametric model", "Nationwide GAM", "Municipality-type GAM")),
-                                 dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
-                                 PRD = if_else(municipality_type == "Countrywide", round(PRD, digits = 2), NA_real_)) %>%
-                                 arrange(municipality_type, Specification, dataset_type)
+performance_all_groups <- bind_rows(performance_countrywide_for_combined,
+                                    performance_municipality_type) %>%
+                                    mutate(municipality_type = factor(as.character(municipality_type), levels = c("Countrywide",
+                                                                                                                  "Capital",
+                                                                                                                  "Commuter",
+                                                                                                                  "Large city",
+                                                                                                                  "Provincial",
+                                                                                                                  "Rural")),
+                                           Specification = factor(Specification, levels = c("Parametric model", 
+                                                                                            "Nationwide GAM", 
+                                                                                            "Municipality-type GAM")),
+
+                                           dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+
+                                           PRD = if_else(municipality_type == "Countrywide", round(PRD, digits = 2), NA_real_)) %>%
+                                    arrange(municipality_type, Specification, dataset_type)
 
 
 performance_all_groups_display <- performance_all_groups %>%
@@ -1936,10 +2620,10 @@ performance_all_groups_display <- performance_all_groups %>%
 
 # Full table for notebook inspection
 kable(performance_all_groups_display %>%
-select(-N),
-digits = 2,
-caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
-booktabs = TRUE) %>%
+      select(-N),
+      digits = 2,
+      caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
+      booktabs = TRUE) %>%
 kable_styling(full_width = FALSE,
               position = "center",
               bootstrap_options = c("striped", "condensed", "responsive")) %>%
@@ -1948,61 +2632,22 @@ collapse_rows(columns = 1, valign = "top")
 
 # Save full comparison table as LaTeX
 tbl_all_groups_latex <- kable(performance_all_groups_display %>%
-                        select(-N),
-                        format = "latex",
-                        booktabs = TRUE,
-                        digits = 2,
-                        caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
-                        label = "perf_models_by_municipality") %>%
-                        kable_styling(full_width = FALSE,
-                                      position = "center",
-                                      latex_options = c("hold_position", "scale_down")) %>%
-                        collapse_rows(columns = 1, valign = "top", latex_hline = "major")
-
-writeLines(tbl_all_groups_latex,"saved_files/performance_models_by_municipality.tex") 
-
-
-# ------------------------------------------------------------------------------
-# 6. Compact validation-only comparison table
-#
-# This is likely the most useful table for the main manuscript.
-# ------------------------------------------------------------------------------
-
-performance_validation_comparison <- performance_all_groups %>%
-                                     filter(dataset_type == "Validation") %>%
-                                     select(municipality_type, Specification, MALE, MAPE, MAE, PM20, COD, PRD) %>%
-                                     rename(`Municipality type` = municipality_type,
-                                            Model = Specification,
-                                            `MAPE [%]` = MAPE,
-                                            `MAE [DKK]` = MAE,
-                                            `PM20 [%]` = PM20,
-                                            `COD [%]` = COD)
-
-
-kable(performance_validation_comparison,
-      digits = 2,
-      caption = paste("Cross-validated performance by model specification", "and municipality type."),
-      booktabs = TRUE) %>%
-kable_styling(full_width = FALSE, position = "center") %>%
-collapse_rows(columns = 1, valign = "top")
-
-
-tbl_validation_latex <- kable(performance_validation_comparison,
+                              select(-N),
                               format = "latex",
                               booktabs = TRUE,
                               digits = 2,
-                              caption = paste("Cross-validated performance by model specification", "and municipality type."),
-                              label = "perf_validation_models") %>%
+                              caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
+                              label = "perf_models_by_municipality") %>%
                         kable_styling(full_width = FALSE,
                                       position = "center",
                                       latex_options = c("hold_position", "scale_down")) %>%
                         collapse_rows(columns = 1, valign = "top", latex_hline = "major")
 
-writeLines(tbl_validation_latex, "saved_files/performance_validation_models.tex")
+writeLines(tbl_all_groups_latex, "saved_files/performance_models_by_municipality.tex")
 
 
 # ==============================================================================
-# 7. Residual diagnostics for GAM2 only
+# 6. Residual diagnostics for GAM2 only
 # ==============================================================================
 
 residual_df_validation <- residual_df_gam2 %>%
@@ -2011,7 +2656,7 @@ residual_df_validation <- residual_df_gam2 %>%
 
 
 # ------------------------------------------------------------------------------
-# 7.1 Validation residuals on the log scale
+# 6.1 Validation residuals on the log scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals_log <- ggplot(residual_df_validation,
@@ -2036,7 +2681,7 @@ print(plot_validation_residuals_log)
 
 
 # ------------------------------------------------------------------------------
-# 7.2 Validation residuals on the percentage scale
+# 6.2 Validation residuals on the percentage scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals_percent <- ggplot(residual_df_validation,
@@ -2071,7 +2716,7 @@ print(plot_validation_residuals_percent)
 
 
 # ------------------------------------------------------------------------------
-# 7.3 Validation residuals on the original price scale
+# 6.3 Validation residuals on the original price scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals <- ggplot(residual_df_validation, aes(x = sales_price / 1e6, y = residual_sales_price / 1e6)) +
@@ -2094,12 +2739,11 @@ plot_validation_residuals <- ggplot(residual_df_validation, aes(x = sales_price 
                             theme(legend.position = c(0.5, 0.4))
 
 saveRDS(plot_validation_residuals, "saved_files/plot_validation_residuals.rds")
-
 print(plot_validation_residuals)
 
 
 # ==============================================================================
-# 8. Training and validation error over time for GAM2 only
+# 7. Training and validation error over time for GAM2 only
 # ==============================================================================
 
 residual_df_gam2_plot <- residual_df_gam2 %>%
@@ -2108,7 +2752,7 @@ residual_df_gam2_plot <- residual_df_gam2 %>%
 
 
 # ------------------------------------------------------------------------------
-# 8.1 MALE over time
+# 7.1 MALE over time
 # ------------------------------------------------------------------------------
 
 plot_log_errors <- ggplot(residual_df_gam2_plot) +
@@ -2127,7 +2771,7 @@ print(plot_log_errors)
 
 
 # ------------------------------------------------------------------------------
-# 8.2 PM20 over time
+# 7.2 PM20 over time
 # ------------------------------------------------------------------------------
 
 plot_percentage_errors <- ggplot(residual_df_gam2_plot) +
@@ -2147,7 +2791,7 @@ print(plot_percentage_errors)
 
 
 # ------------------------------------------------------------------------------
-# 8.3 MAE over time
+# 7.3 MAE over time
 # ------------------------------------------------------------------------------
 
 plot_errors <- ggplot(residual_df_gam2_plot) +
@@ -2168,289 +2812,194 @@ print(plot_errors)
 ```
 
 
-## 3.4 Illustrative valuations
-The code below performs valuations using the fitted models a set of simplified, fictitious properties, which are described in the main paper. 
-
-```{r Interpretation property models, eval=TRUE, echo=TRUE, warning=FALSE}
-
-make_interpretation_results <- function(model, model_name) {
-  
-  model_data <- model.frame(model)
-  
-  # generate fictitious properties
-  grid <- data.frame(coordinate_east = c(697000, 462037, 469142, 725599),
-                     coordinate_north = c(6150000, 6150225, 6322298, 6185920))
-  
-  point_constraints <- list()
-  for (sm in model$smooth) {
-    if (!is.null(sm$point.con)) {point_constraints <- c(point_constraints, sm$point.con)}
-  }
-  
-  vars_in_model <- all.vars(formula(model))
-  
-  # fill missing variables in grid
-  for (var in setdiff(vars_in_model, names(grid))) {
-    
-    if (is.factor(model_data[[var]])) {
-      
-      grid[[var]] <- factor(rep(levels(model_data[[var]])[1], nrow(grid)),
-                            levels = levels(model_data[[var]]))
-      
-    } else {
-      value <- if (var %in% names(point_constraints)) {
-        point_constraints[[var]]
-      } else {
-        mean(model_data[[var]], na.rm = TRUE)
-      }
-      grid[[var]] <- rep(value, nrow(grid))
-    }
-  }
-  
-  # augment properties
-  grid$coast_distance[2:4] <- 100
-  grid$year_built[2:4] <- 2020
-  grid$municipality_type[2:4] <- factor(c("Provincial", "Rural", "Capital"), levels = levels(model_data$municipality_type))
-  grid$type <- c("Reference", "Esbjerg", "Nordjylland", "Strandvejen")
-  
-  terms <- as.data.frame(predict.gam(model, grid, type = "terms"))
-  
-  # helper for summing possibly missing columns
-  sum_terms <- function(df, cols) {
-    cols_present <- intersect(cols, names(df))
-    if (length(cols_present) == 0) {return(rep(0, nrow(df)))}
-    rowSums(df[, cols_present, drop = FALSE])
-  }
-  
-  adjustments <- terms %>%
-                 mutate(standard_price = exp(as.vector(coef(model))[1]),
-      
-                        adjustment_coordinates = exp(`s(coordinate_east,coordinate_north)`),
-      
-                        # Smooths with municipality_type interactions – 
-                        #might as well sum over all is it only non-zero for the relevant smooth
-                         
-                        adjustment_sales_date = exp(`s(sales_date_numeric):municipality_typeCapital` +
-                                                    `s(sales_date_numeric):municipality_typeRural` +
-                                                    `s(sales_date_numeric):municipality_typeCommuter` +
-                                                    `s(sales_date_numeric):municipality_typeProvincial` +
-                                                    `s(sales_date_numeric):municipality_typeLarge city`),
-      
-                        adjustment_year_built = exp(`s(year_built):municipality_typeCapital` +
-                                                    `s(year_built):municipality_typeRural` +
-                                                    `s(year_built):municipality_typeCommuter` +
-                                                    `s(year_built):municipality_typeProvincial` +
-                                                    `s(year_built):municipality_typeLarge city`),
-      
-                        adjustment_year_rebuilt = exp(`s(year_rebuilt):municipality_typeCapital` +
-                                                      `s(year_rebuilt):municipality_typeRural` +
-                                                      `s(year_rebuilt):municipality_typeCommuter` +
-                                                      `s(year_rebuilt):municipality_typeProvincial` +
-                                                      `s(year_rebuilt):municipality_typeLarge city`),
-      
-                        adjustment_living_space = exp(`s(living_space):municipality_typeCapital` +
-                                                      `s(living_space):municipality_typeRural` +
-                                                      `s(living_space):municipality_typeCommuter` +
-                                                      `s(living_space):municipality_typeProvincial` +
-                                                      `s(living_space):municipality_typeLarge city`),
-      
-                        adjustment_lot_size = exp(`s(lot_size):municipality_typeCapital` +
-                                                  `s(lot_size):municipality_typeRural` +
-                                                  `s(lot_size):municipality_typeCommuter` +
-                                                  `s(lot_size):municipality_typeProvincial` +
-                                                  `s(lot_size):municipality_typeLarge city`),
-                                              
-                        adjustment_coast_distance = exp(`s(coast_distance)`),
-          
-                        adjustment_lake_distance = exp(`s(lake_distance)`),
-          
-                        adjustment_stream_distance = exp(`s(stream_distance)`),
-          
-                        adjustment_road_distance = exp(`s(road_distance)`),
-          
-                        adjustment_highway_distance = exp(`s(highway_distance)`),
-          
-                        adjustment_train_station_distance = exp(`s(train_station_distance)`),
-          
-                        adjustment_railway_distance = exp(`s(railway_distance)`),
-          
-                        adjustment_windturbine_distance = exp(`s(windturbine_distance)`),
-          
-                        adjustment_ocean_view = exp(`s(ocean_view)`),
-          
-                        adjustment_lake_view = exp(`s(lake_view)`),
-          
-                        adjustment_forest_size = exp(`s(forest_size)`),
-          
-                        adjustment_number_of_bathrooms = exp(`s(number_of_bathrooms):municipality_typeCapital` +
-                                                             `s(number_of_bathrooms):municipality_typeRural` +
-                                                             `s(number_of_bathrooms):municipality_typeCommuter` +
-                                                             `s(number_of_bathrooms):municipality_typeProvincial` +
-                                                             `s(number_of_bathrooms):municipality_typeLarge city`),
-      
-                        #Factor terms with interactions
-                        adjustment_municipality_type = exp(municipality_type),
-                        adjustment_house_type = exp(house_type + `house_type:municipality_type`),
-                        adjustment_roof_type = exp(roof_type + `municipality_type:roof_type`),
-                        adjustment_wall_type = exp(wall_type + `municipality_type:wall_type`),
-                        adjustment_heating_type = exp(heating_type + `municipality_type:heating_type`),
- 
-                        adjustment_location = adjustment_coordinates *
-                                              adjustment_sales_date *
-                                              adjustment_lot_size *
-                                              adjustment_coast_distance *
-                                              adjustment_lake_distance *
-                                              adjustment_stream_distance *
-                                              adjustment_road_distance *
-                                              adjustment_highway_distance *
-                                              adjustment_train_station_distance *
-                                              adjustment_railway_distance *
-                                              adjustment_windturbine_distance *
-                                              adjustment_ocean_view *
-                                              adjustment_lake_view *
-                                              adjustment_forest_size *
-                                              adjustment_municipality_type,
-      
-                        adjustment_property = adjustment_year_built *
-                                              adjustment_year_rebuilt *
-                                              adjustment_living_space *
-                                              adjustment_house_type *
-                                              adjustment_roof_type *
-                                              adjustment_wall_type *
-                                              adjustment_heating_type * 
-                                              adjustment_number_of_bathrooms,
-      
-                        adjustment_total = adjustment_location * adjustment_property,
-                        predicted_price = standard_price * adjustment_total) %>%
-                        select(standard_price,
-                               adjustment_municipality_type,
-                               adjustment_coordinates,
-                               adjustment_sales_date,
-                               adjustment_year_built,
-                               adjustment_year_rebuilt,
-                               adjustment_living_space,
-                               adjustment_lot_size,
-                               adjustment_coast_distance,
-                               adjustment_lake_distance,
-                               adjustment_stream_distance,
-                               adjustment_road_distance,
-                               adjustment_highway_distance,
-                               adjustment_train_station_distance,
-                               adjustment_railway_distance,
-                               adjustment_windturbine_distance,
-                               adjustment_ocean_view,
-                               adjustment_lake_view,
-                               adjustment_forest_size,
-                               adjustment_number_of_bathrooms,
-                               adjustment_house_type,
-                               adjustment_roof_type,
-                               adjustment_wall_type,
-                               adjustment_heating_type,
-                               adjustment_location,
-                               adjustment_property,
-                               adjustment_total,
-                               predicted_price)
-  
-  grid_out <- grid %>% select(coast_distance, year_built, municipality_type, type)
-  
-  bind_cols(grid_out, adjustments) %>% mutate(Model = model_name, .before = 1)
-}
-
-results_all_models <- bind_rows(
-  lapply(names(models_gam2), function(model_name) {
-    make_interpretation_results(models_gam2[[model_name]], model_name)
-  })
-)
-
-saveRDS(results_all_models, "saved_files/results_interpretation_property_models.rds")
-
-```
-
-
-
 ## 3.5 Preditiction uncertainty and stability
 The code below flags outliers based on both the GAM-based uncertainty estimate of Model 1 as well as the ensemble-based robustness measure described in the main paper. 
 
 ```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
-predictions <- imap(models_gam2, function(model, name) {
-  preds <- predict.gam(model, dataset_properties, type = "link", se.fit = TRUE)
-  tibble(!!paste0("pred_", name) := as.vector(preds$fit),
-         !!paste0("sigma_", name) := as.vector(preds$se.fit))
-})
+# The code below identifies statistically fragile valuations using two
+# complementary uncertainty measures:
+#
+#   sigma_Model1   : prediction uncertainty from Model 1
+#   sigma_Ensemble : variation in predictions across the four fitted models
+#
+# A valuation is flagged when either measure exceeds the specified threshold,
+# corresponding to the max-rule described in the main paper.
+
+
+# ------------------------------------------------------------------------------
+# 1. Predictions and Model 1 uncertainty
+# ------------------------------------------------------------------------------
+
+predictions <- imap(models_gam2,
+                    
+  function(model, name) {
+
+    preds <- predict.gam(model, dataset_properties, type = "link", se.fit = TRUE)
+    tibble(!!paste0("pred_", name) := as.vector(preds$fit), !!paste0("sigma_", name) := as.vector(preds$se.fit))
+    
+  }
+)
+
 
 pred_matrix <- bind_cols(predictions)
+
 property_predictions <- bind_cols(dataset_properties, pred_matrix)
-saveRDS(property_predictions, "saved_files/property_predictions.rds")
+
+
+# ------------------------------------------------------------------------------
+# 2. Ensemble uncertainty and combined uncertainty
+# ------------------------------------------------------------------------------
 
 pred_cols <- grep("^pred_", names(property_predictions), value = TRUE)
-sigma_limit <- 0.2
+
+sigma_limit <- 0.20
+
 
 property_predictions <- property_predictions %>%
                         rowwise() %>%
-                        mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols))), # ensemble spread
-                               sigma_combined = pmax(sigma_Model1, sigma_Ensemble),   # max-rule
-                               above_limit    = sigma_combined > sigma_limit) %>%
+                        mutate(sigma_Ensemble = sd(c_across(all_of(pred_cols))),
+                               sigma_combined = pmax(sigma_Model1, sigma_Ensemble),
+                               above_limit = sigma_combined > sigma_limit) %>%
                         ungroup()
 
+
+# ------------------------------------------------------------------------------
+# 3. Determine which uncertainty measure causes each flag
+# ------------------------------------------------------------------------------
+
+property_predictions <- property_predictions %>%
+                        mutate(flag_source = case_when(!above_limit ~ "Not flagged",
+                                                       sigma_Model1 > sigma_limit & 
+                                                       sigma_Ensemble > sigma_limit ~ "Both",
+                                                       sigma_Ensemble > sigma_limit ~ "Ensemble",
+                                                       sigma_Model1 > sigma_limit ~ "Model 1"),
+                               flag_source = factor(flag_source, 
+                                                    levels = c("Not flagged", 
+                                                               "Model 1", 
+                                                               "Ensemble", 
+                                                               "Both")))
+
+
+flagged_properties <- property_predictions %>% filter(above_limit)
+
+
+# ------------------------------------------------------------------------------
+# 4. Summary of flagged properties
+# ------------------------------------------------------------------------------
+
 n_total <- nrow(property_predictions)
-n_flagged <- sum(property_predictions$above_limit)
+
+n_flagged <- nrow(flagged_properties)
+
 pct_flagged <- 100 * n_flagged / n_total
 
 
-label_expr <- sprintf(
-  "atop('Flagged: %s / %s (%.2f%%)', 'Rule: max(' * sigma[\"Model 1\"] * ', ' * sigma[Ensemble] * ') > %.2f')",
-  format(n_flagged, big.mark = ","),
-  format(n_total,   big.mark = ","),
-  pct_flagged,
-  sigma_limit
-)
+flag_summary <- property_predictions %>%
+                count(flag_source, name = "N") %>%
+                mutate(Percent = 100 * N / n_total)
 
-plot_uncertainties <- ggplot(property_predictions, aes(x = sigma_Model1, y = sigma_Ensemble)) +
-                      geom_point(alpha = 0.1, size = 0.8, color = "#08306B") +
-                      geom_point(data = subset(property_predictions, above_limit),
-                                 shape = 21, fill = NA, color = "#08306B",
-                                 size = 1.5, stroke = 0.7, alpha = 1.0) +
-                      geom_density_2d(color = "grey80", linewidth = 0.6, alpha = 0.8) +
-                      geom_vline(xintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
-                      geom_hline(yintercept = sigma_limit, linetype = "dotted", linewidth = 0.7) +
+print(flag_summary)
+
+
+cat("\nFlagged:", format(n_flagged, big.mark = ","), "/", format(n_total, big.mark = ","), sprintf("(%.2f%%)\n", pct_flagged))
+
+
+# ------------------------------------------------------------------------------
+# 5. Joint distribution of the two uncertainty measures
+# ------------------------------------------------------------------------------
+
+label_expr <- sprintf(paste0("atop(",
+                             "'Flagged: %s / %s (%.2f%%)', ",
+                             "'Rule: max(' * sigma['Model 1'] * ', ' * sigma[Ensemble] * ') > %.2f'",
+                             ")"),
+                      format(n_flagged, big.mark = ","),
+                      format(n_total, big.mark = ","),
+                      pct_flagged,
+                      sigma_limit)
+
+
+plot_uncertainties <- ggplot(property_predictions,
+                      aes(x = sigma_Model1, y = sigma_Ensemble)) +
+  
+                      geom_point(alpha = 0.10,
+                                 size = 0.8,
+                                 color = "#08306B") +
+
+                      geom_point(data = flagged_properties,
+                                 shape = 21,
+                                 fill = NA,
+                                 color = "#08306B",
+                                 size = 1.5,
+                                 stroke = 0.7,
+                                 alpha = 1) +
+                    
+                      geom_density_2d(color = "grey80",
+                                      linewidth = 0.6,
+                                      alpha = 0.8) +
+                    
+                      geom_vline(xintercept = sigma_limit,
+                                 linetype = "dotted",
+                                 linewidth = 0.7) +
+                    
+                      geom_hline(yintercept = sigma_limit,
+                                 linetype = "dotted",
+                                 linewidth = 0.7) +
+                    
                       annotate("label",
-                               x = 0.21, y = 0.475,
+                               x = 0.21,
+                               y = 0.475,
                                label = label_expr,
                                parse = TRUE,
-                               hjust = 0, vjust = 1,
-                               size = 3.5, label.size = 0.2) +
+                               hjust = 0,
+                               vjust = 1,
+                               size = 3.5,
+                               label.size = 0.2) +
+                    
                       coord_equal(xlim = c(0, 0.5), ylim = c(0, 0.5), expand = FALSE) +
+                    
                       labs(x = expression(sigma["Model 1"]),
                            y = expression(sigma["Ensemble"]))
 
+
+plot_uncertainties
+
+
+# ------------------------------------------------------------------------------
+# 6. Flagged valuations on ensemble-uncertainty map
+# ------------------------------------------------------------------------------
+
+# plot_spatial_smooths[[9]] contains the geographic distribution of
+# sigma_Ensemble. The flagged valuation properties are superimposed as
+# hollow black circles. The underlying colour scale therefore continues
+# to show the magnitude of ensemble uncertainty, while the points identify
+# the properties rejected by the combined max-rule.
+
+plot_uncertainty_geographic <- plot_spatial_smooths[[9]] +
+
+                               # Flagged valuation properties
+                               geom_point(data = flagged_properties,
+                                          aes(x = coordinate_east, y = coordinate_north),
+                                          inherit.aes = FALSE,
+                                          shape = 8,
+                                          fill = NA,
+                                          color = "gold",
+                                          size = 2.5,
+                                          stroke = 0.5,
+                                          alpha = 1)
+
+plot_uncertainty_geographic
+
+
+# ------------------------------------------------------------------------------
+# 7. Save results
+# ------------------------------------------------------------------------------
+
+saveRDS(property_predictions, "saved_files/property_predictions.rds")
+saveRDS(flagged_properties, "saved_files/flagged_properties.rds")
+saveRDS(flag_summary, "saved_files/uncertainty_flag_summary.rds")
 saveRDS(plot_uncertainties, "saved_files/plot_uncertainties.rds")
-print(plot_uncertainties)
-
-#Plot outliers geographically
-outliers <- property_predictions %>% filter(above_limit)
-
-plot_outliers_geographically <- ggplot() +
-  
-                                # Add land/ocean contour
-                                geom_contour(data = coordinate_grid,
-                                             aes(x = coordinate_east, 
-                                                 y = coordinate_north, 
-                                                 z = as.numeric(!ocean)),
-                                             color = "black", size = 0.4) +
-                                # Outliers
-                                geom_point(data = outliers,
-                                           aes(x = coordinate_east,
-                                               y = coordinate_north,
-                                               color = sigma_combined),
-                                           size = 2.0, alpha = 0.7) +
-                                scale_color_viridis_c(option = "plasma", name = expression(sigma["Combined"])) + 
-                                coord_fixed() +
-                                theme_void(base_size = 10) +
-                                theme(plot.background = element_rect(fill = "white", color = NA),
-                                      panel.background = element_rect(fill = "white", color = NA))
-
-saveRDS(plot_outliers_geographically, "saved_files/plot_outliers_geographically.rds")
-print(plot_outliers_geographically)
+saveRDS(plot_uncertainty_geographic, "saved_files/plot_uncertainty_geographic.rds")
 
 
 ```
@@ -2682,64 +3231,168 @@ print(concurvity_heatmaps)
 The code below fits the model ensemble for different basis set sizes of the spatial smooth to examine the convergence of the validation error.
 
 ```{r Convergence basis set, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+# ------------------------------------------------------------------------------
+# Basis-set convergence for the spatial smooth
+# ------------------------------------------------------------------------------
+
 k_values <- c(100, 200, 500, 1000, 1500, 2000, 3000, 4000, 5000)
 k_values <- k_values[k_values <= k_spatial]
-  
+
 model_grid_basis <- expand.grid(fold = 1:N, k_spatial = k_values)
 
 
-if (load) {
+# ------------------------------------------------------------------------------
+# Helper: replace k for the two-dimensional spatial smooth in a formula
+# ------------------------------------------------------------------------------
+
+set_spatial_k <- function(formula, k) {
+
+  replace_spatial_smooth <- function(expr) {
+
+    if (!is.call(expr)) {return(expr)}
+
+    # Identify:
+    # s(coordinate_east, coordinate_north, ...)
+    if (identical(expr[[1]], as.name("s")) &&
+        length(expr) >= 3 &&
+        identical(expr[[2]], as.name("coordinate_east")) &&
+        identical(expr[[3]], as.name("coordinate_north"))) {
+
+      args <- as.list(expr)
+
+      # Replace existing k if present
+      arg_names <- names(args)
+
+      if (!is.null(arg_names) && "k" %in% arg_names) {
+
+        args[["k"]] <- k
+
+      } else {
+
+        args[["k"]] <- k
+      }
+
+      return(as.call(args))
+    }
+
+    # Recursively search the rest of the formula
+    for (j in seq_along(expr)) {
+
+      if (j > 1) {expr[[j]] <- replace_spatial_smooth(expr[[j]])}
+      
+    }
+
+    expr
+  }
+
+
+  formula_new <- formula
+
+  formula_new[[3]] <- replace_spatial_smooth(formula[[3]])
+
+  environment(formula_new) <- environment(formula)
+
+  formula_new
   
-  models_basis <- readRDS("saved_files/models_basis.rds")
-  
-} else {
-  
-  models_basis <- future_lapply(seq_len(nrow(model_grid_basis)), function(idx) {
-    row <- model_grid_basis[idx, ]
-    fit_fold(
-      i = row$fold,
-      data = dataset_property_sales_cv,
-      k_spatial = row$k_spatial,
-      k_other = k_other,
-      fraction = 1.0,
-      checkpoint_prefix = paste0("basis_k", row$k_spatial)
-    )
-  })
-  
-  names(models_basis) <- paste0("Model", model_grid_basis$fold, "_", model_grid_basis$k_spatial)
-  saveRDS(models_basis, "saved_files/models_basis.rds")
 }
 
-get_residuals_grid <- function(models, dataset, grid_df, grid_name) {
+
+# ------------------------------------------------------------------------------
+# Fit or load basis-convergence models
+# ------------------------------------------------------------------------------
+
+if (load) {
+
+  models_basis <- readRDS("saved_files/models_basis.rds")
+
+} else {
+
+  models_basis <- future_lapply(seq_len(nrow(model_grid_basis)),
+
+    function(idx) {
+
+      row <- model_grid_basis[idx, ]
+
+
+      # Use the final GAM2 specification, changing only the spatial basis size
+      formula_basis <- set_spatial_k(formula = gam2_formula, k = row$k_spatial)
+
+      fit_fold(i = row$fold,
+               data = dataset_property_sales_cv,
+               formula = formula_basis,
+               fraction = 1.0,
+               checkpoint_prefix = paste0("basis_k", row$k_spatial))
+    }
+  )
+
+
+  names(models_basis) <- paste0("Model",
+                                model_grid_basis$fold,
+                                "_k",
+                                model_grid_basis$k_spatial)
+
+
+  saveRDS(models_basis, "saved_files/models_basis.rds")
   
-  residual_list <- future_lapply(seq_along(models), function(i) {
-    model_name <- names(models)[i]
-    model <- models[[i]]
-    row <- grid_df[i, ]
-    fold <- row$fold
-    
-    predicted_sales_price <- predict.gam(model, newdata = dataset, type = "response")
-    
-    tibble(sales_price = dataset$sales_price,
-           predicted_sales_price = predicted_sales_price,
-           residual_sales_price = predicted_sales_price - dataset$sales_price,
-           residual_sales_price_percent = (predicted_sales_price - dataset$sales_price) / dataset$sales_price * 100,
-           residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
-           validation = dataset$validation_set == fold,
-           municipality_type = dataset$municipality_type,
-           Model = model_name,
-           value = row[[grid_name]])
-  })
-  
+}
+
+
+# ------------------------------------------------------------------------------
+# Extract predictions and residuals
+# ------------------------------------------------------------------------------
+
+get_residuals_grid <- function(models,
+                               dataset,
+                               grid_df,
+                               grid_name) {
+
+  residual_list <- future_lapply(seq_along(models),
+
+    function(i) {
+
+      model_name <- names(models)[i]
+      model <- models[[i]]
+
+      row <- grid_df[i, ]
+      fold <- row$fold
+
+
+      predicted_sales_price <- as.numeric(predict.gam(model, newdata = dataset, type = "response"))
+
+
+      tibble(sales_price = dataset$sales_price,
+             predicted_sales_price = predicted_sales_price,
+             residual_sales_price = predicted_sales_price - dataset$sales_price,
+             residual_sales_price_percent = 100 * (predicted_sales_price - dataset$sales_price) / dataset$sales_price,
+             residual_sales_price_log = log(predicted_sales_price) - log(dataset$sales_price),
+             validation = dataset$validation_set == fold,
+             municipality_type = dataset$municipality_type,
+             Model = model_name,
+             value = row[[grid_name]])
+    }
+  )
+
+
   bind_rows(residual_list)
 }
+
+
+# ------------------------------------------------------------------------------
+# Residuals
+# ------------------------------------------------------------------------------
 
 residual_df_basis <- get_residuals_grid(models = models_basis,
                                         dataset = dataset_property_sales_cv,
                                         grid_df = model_grid_basis,
                                         grid_name = "k_spatial")
 
+
 saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
+
+
+# ------------------------------------------------------------------------------
+# Performance
+# ------------------------------------------------------------------------------
 
 performance_basis <- residual_df_basis %>%
                      mutate(type = if_else(validation, "Validation error", "Training error")) %>%
@@ -2747,15 +3400,22 @@ performance_basis <- residual_df_basis %>%
                      summarise(MALE = mean(abs(residual_sales_price_log)), .groups = "drop") %>%
                      rename(k = value)
 
+
+# ------------------------------------------------------------------------------
+# Plot
+# ------------------------------------------------------------------------------
+
 plot_basis <- ggplot(performance_basis,
                      aes(x = k, y = MALE, color = municipality_type, lty = type)) +
-              geom_line() +
-              geom_point() +
-              labs(x = "Number of spatial basis functions (k)",
-                   y = "MALE",
-                   color = "Municipality type")
+                     geom_line() +
+                     geom_point() +
+                     labs(x = "Number of spatial basis functions (k)",
+                          y = "MALE",
+                          color = "Municipality type")
+
 
 saveRDS(plot_basis, "saved_files/plot_basis.rds")
+
 print(plot_basis)
 
 ```
