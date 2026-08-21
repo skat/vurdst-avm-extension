@@ -355,7 +355,7 @@ grundsalg_2024 <- salg_2024 %>% filter(!(vurderingsejendom_id_ice %in% bygningsi
 
 #saml ejendomssalg og select relevante felter
 ejendomssalg <- bind_rows(ejendomssalg_2020, ejendomssalg_2024) %>%
-                distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, salg.koebsdato, .keep_all = TRUE) %>%
+                distinct(vurinfo.vurderingsejendom_id, enhed.enhed_id_ice, delgrund.delgrund_ids, salg.koebsdato, .keep_all = TRUE) %>%
                 select(any_of(variable))
 
 #saml grundsalg og select relevante felter
@@ -386,17 +386,17 @@ if (antag_historik){
 
   ejendomssalg <- ejendomssalg %>%
                   left_join(vurderingsejendomme %>%
-                  select(vurderingsejendom_id_ice, enhed.enhed_id_ice, all_of(antag_historik_felter)) %>%
-                  rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)), by = c("vurderingsejendom_id_ice", "enhed.enhed_id_ice")) %>%
+                  select(vurderingsejendom_id_ice, enhed.enhed_id_ice, delgrund.delgrund_ids, all_of(antag_historik_felter)) %>%
+                  rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)), by = c("vurderingsejendom_id_ice", "enhed.enhed_id_ice", "delgrund.delgrund_ids")) %>%
                   mutate(vurinfo.udsigtslaengde_hav = coalesce(vurinfo.udsigtslaengde_hav_ny, vurinfo.udsigtslaengde_hav),
                          vurinfo.udsigtslaengde_soe = coalesce(vurinfo.udsigtslaengde_soe_ny, vurinfo.udsigtslaengde_soe)) %>%
                   select(-ends_with("_ny"))
 
   grundsalg <- grundsalg %>%
                left_join(vurderingsejendomme %>%
-               select(vurderingsejendom_id_ice, all_of(antag_historik_felter)) %>%
+               select(vurderingsejendom_id_ice, delgrund.delgrund_ids, all_of(antag_historik_felter)) %>%
                slice(1) %>%
-               rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)), by = c("vurderingsejendom_id_ice")) %>%
+               rename_with(~ paste0(.x, "_ny"), all_of(antag_historik_felter)), by = c("vurderingsejendom_id_ice", "delgrund.delgrund_ids")) %>%
                mutate(vurinfo.udsigtslaengde_hav = coalesce(vurinfo.udsigtslaengde_hav_ny, vurinfo.udsigtslaengde_hav),
                       vurinfo.udsigtslaengde_soe = coalesce(vurinfo.udsigtslaengde_soe_ny, vurinfo.udsigtslaengde_soe)) %>%
                select(-ends_with("_ny"))
@@ -408,20 +408,14 @@ if (antag_historik){
 # 4. Add some geographic variables
 # -------------------------
 
-geo <- konstant::geo
-kommunegrupper <- konstant::kommunegrupper
+geographical_subdivisions <- read.csv2("geographical_subdivisions.csv")
 
-ejendomssalg <- left_join(ejendomssalg, geo, by = "vurinfo.kommunenummer")
-ejendomssalg <- left_join(ejendomssalg, kommunegrupper, by = "kommune_navn")
-
-grundsalg <- left_join(grundsalg, geo, by = "vurinfo.kommunenummer")
-grundsalg <- left_join(grundsalg, kommunegrupper, by = "kommune_navn")
-
-vurderingsejendomme <- left_join(vurderingsejendomme, geo, by = "vurinfo.kommunenummer")
-vurderingsejendomme <- left_join(vurderingsejendomme, kommunegrupper, by = "kommune_navn")
+ejendomssalg <- left_join(ejendomssalg, geographical_subdivisions, by = c("vurinfo.kommunenummer"="kommunenummer"))
+grundsalg <- left_join(grundsalg, geographical_subdivisions, by = c("vurinfo.kommunenummer"="kommunenummer"))
+vurderingsejendomme <- left_join(vurderingsejendomme, geographical_subdivisions, by = c("vurinfo.kommunenummer"="kommunenummer"))
 
 # -------------------------
-# 4. Save data
+# 5. Save data
 # -------------------------
 
 saveRDS(ejendomssalg, "ejendomssalg.rds")

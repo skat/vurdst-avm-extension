@@ -15,7 +15,7 @@ This notebook provides a walkthrough of the analysis and results described in se
 
 # 1. Reproducibility and setup 
 
-```{r setup, eval=TRUE, include=FALSE}
+```{r setup, eval=TRUE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(tidyr)
@@ -1838,19 +1838,6 @@ illustrative_properties <- pmap_dfr(illustrative_selection,
 )
 
 
-# Inspect selected properties
-illustrative_properties %>% select(property_label,
-                                   example_description,
-                                   municipality,
-                                   municipality_type,
-                                   province,
-                                   year_built,
-                                   living_space,
-                                   lot_size,
-                                   coast_distance,
-                                   coordinate_east,
-                                   coordinate_north)
-
 
 # ------------------------------------------------------------------------------
 # 2. Helper for summing model terms
@@ -2056,27 +2043,91 @@ stopifnot(decomposition_check$max_relative_difference < 1e-8)
 
 
 # ------------------------------------------------------------------------------
-# 6. Full decomposition for supplementary table
+# 6. Supplementary tables for illustrative valuations
+#
+# The supplementary output consists of:
+#
+#   1. One table describing the characteristics of properties A--E.
+#   2. One decomposition table for each property, with Models 1--4 in columns.
+#
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
+# 6a. Characteristics of the five illustrative properties
+# ------------------------------------------------------------------------------
+
+illustrative_characteristics <- illustrative_properties %>%
+                                arrange(property_label) %>%
+                                transmute(Property = property_label,
+                                          Description = example_description,
+                                          Municipality = as.character(municipality),
+                                          `Municipality type` = as.character(municipality_type),
+                                          Province = as.character(province),
+
+                                          # Structural characteristics
+                                          `Year built` = as.character(year_built),
+                                          `Year rebuilt` = as.character(year_rebuilt),
+                                          `Living space [m2]` = format(living_space, big.mark = ",", trim = TRUE),
+                                          `Lot size [m2]` = format(lot_size, big.mark = ",", trim = TRUE),
+                                          Bathrooms = as.character(number_of_bathrooms),
+                                          `House type` = as.character(house_type),
+                                          `Roof type` = as.character(roof_type),
+                                          `Wall type` = as.character(wall_type),
+                                          `Heating type` = as.character(heating_type),
+
+                                          # Location characteristics
+                                          `Coast distance [m]` = format(round(coast_distance), big.mark = ",", trim = TRUE),
+                                          `Lake distance [m]` = format(round(lake_distance), big.mark = ",", trim = TRUE),
+                                          `Stream distance [m]` = format(round(stream_distance), big.mark = ",", trim = TRUE),
+                                          `Road distance [m]` = format(round(road_distance), big.mark = ",", trim = TRUE),
+                                          `Highway distance [m]` = format(round(highway_distance), big.mark = ",", trim = TRUE),
+                                          `Train station distance [m]` = format(round(train_station_distance), big.mark = ",", trim = TRUE),
+                                          `Railway distance [m]` = format(round(railway_distance), big.mark = ",", trim = TRUE),
+                                          `Wind turbine distance [m]` = format(round(windturbine_distance), big.mark = ",", trim = TRUE),
+                                          `Ocean view [m]` = format(round(ocean_view), big.mark = ",", trim = TRUE),
+                                          `Lake view [m]` = format(round(lake_view), big.mark = ",", trim = TRUE),
+                                          `Forest size [ha]` = format(round(forest_size, 1), big.mark = ",", trim = TRUE))
+
+
+# Transpose:
+# rows = characteristics
+# columns = properties A--E
+
+illustrative_characteristics_table <- illustrative_characteristics %>%
+                                      pivot_longer(cols = -Property,
+                                                   names_to = "Characteristic",
+                                                   values_to = "Value") %>%
+                                      pivot_wider(names_from = Property,
+                                                  values_from = Value)
+
+
+# LaTeX
+tbl_illustrative_characteristics_latex <- kable(illustrative_characteristics_table,
+                                                format = "latex",
+                                                booktabs = TRUE,
+                                                linesep = "",
+                                                escape = TRUE,
+                                                caption = "Characteristics of the five illustrative valuation properties.",
+                                                label = "illustrative_property_characteristics") %>%
+kable_styling(full_width = FALSE,
+              position = "center",
+              latex_options = "hold_position",
+              font_size = 8)
+
+
+# ------------------------------------------------------------------------------
+# 6b. Full decomposition data
 # ------------------------------------------------------------------------------
 
 interpretation_decomposition <- results_all_models %>%
                                 select(Model,
                                        property_label,
-                                       example,
-                                       example_description,
-                                       id,
-                                       municipality,
-                                       municipality_type,
-                                       province,
-                                       year_built,
-                                       year_rebuilt,
-                                       living_space,
-                                       lot_size,
-                                       number_of_bathrooms,
-                                       coast_distance,
+
+                                       # Reference and time
                                        standard_price,
                                        adjustment_sales_date,
-                                  
+    
                                        # Location adjustments
                                        adjustment_municipality_type,
                                        adjustment_coordinates,
@@ -2091,7 +2142,7 @@ interpretation_decomposition <- results_all_models %>%
                                        adjustment_ocean_view,
                                        adjustment_lake_view,
                                        adjustment_forest_size,
-                                  
+    
                                        # Structural adjustments
                                        adjustment_year_built,
                                        adjustment_year_rebuilt,
@@ -2102,13 +2153,196 @@ interpretation_decomposition <- results_all_models %>%
                                        adjustment_roof_type,
                                        adjustment_wall_type,
                                        adjustment_heating_type,
-                                  
+    
                                        # Aggregate adjustments
                                        adjustment_location,
                                        adjustment_structural,
                                        adjustment_total,
                                        predicted_price) %>%
-                                    arrange(property_label, Model)
+                                mutate(Model = sub("^Model", "Model ", Model), 
+                                       standard_price = standard_price / 1e6, 
+                                       predicted_price = predicted_price / 1e6) %>%
+                                arrange(property_label, Model)
+
+
+# ------------------------------------------------------------------------------
+# 6c. Labels and ordering for decomposition tables
+# ------------------------------------------------------------------------------
+
+decomposition_variables <- c(standard_price = "Reference price [million DKK]",
+                             adjustment_sales_date = "Time",
+                             adjustment_municipality_type = "Municipality type",
+                             adjustment_coordinates = "Spatial",
+                             adjustment_coast_distance = "Distance to coast",
+                             adjustment_lake_distance = "Distance to lake",
+                             adjustment_stream_distance = "Distance to stream",
+                             adjustment_road_distance = "Distance to road",
+                             adjustment_highway_distance = "Distance to highway",
+                             adjustment_train_station_distance = "Distance to train station",
+                             adjustment_railway_distance = "Distance to railway",
+                             adjustment_windturbine_distance = "Distance to wind turbine",
+                             adjustment_ocean_view = "Ocean view",
+                             adjustment_lake_view = "Lake view",
+                             adjustment_forest_size = "Forest size",
+                             adjustment_year_built = "Year built",
+                             adjustment_year_rebuilt = "Year rebuilt",
+                             adjustment_living_space = "Living space",
+                             adjustment_lot_size = "Lot size",
+                             adjustment_number_of_bathrooms = "Number of bathrooms",
+                             adjustment_house_type = "House type",
+                             adjustment_roof_type = "Roof type",
+                             adjustment_wall_type = "Wall type",
+                             adjustment_heating_type = "Heating type",
+                             adjustment_location = "Location adjustment",
+                             adjustment_structural = "Structural adjustment",
+                             adjustment_total = "Total adjustment",
+                             predicted_price = "Valuation [million DKK]")
+
+
+location_variables <- c("adjustment_municipality_type",
+                        "adjustment_coordinates",
+                        "adjustment_coast_distance",
+                        "adjustment_lake_distance",
+                        "adjustment_stream_distance",
+                        "adjustment_road_distance",
+                        "adjustment_highway_distance",
+                        "adjustment_train_station_distance",
+                        "adjustment_railway_distance",
+                        "adjustment_windturbine_distance",
+                        "adjustment_ocean_view",
+                        "adjustment_lake_view",
+                        "adjustment_forest_size")
+
+
+structural_variables <- c("adjustment_year_built",
+                          "adjustment_year_rebuilt",
+                          "adjustment_living_space",
+                          "adjustment_lot_size",
+                          "adjustment_number_of_bathrooms",
+                          "adjustment_house_type",
+                          "adjustment_roof_type",
+                          "adjustment_wall_type",
+                          "adjustment_heating_type")
+
+
+aggregate_variables <- c("adjustment_location",
+                        "adjustment_structural",
+                        "adjustment_total",
+                        "predicted_price")
+
+
+
+# ------------------------------------------------------------------------------
+# 6d. Function constructing one decomposition table per property
+# ------------------------------------------------------------------------------
+
+make_decomposition_table <- function(property) {
+
+  property_data <- interpretation_decomposition %>%
+                   filter(property_label == property) %>%
+                   select(Model, all_of(names(decomposition_variables))) %>%
+                   pivot_longer(cols = -Model,
+                                names_to = "variable",
+                                values_to = "value") %>%
+                   mutate(variable = factor(variable, levels = names(decomposition_variables)),
+                          Adjustment = decomposition_variables[as.character(variable)]) %>%
+                   select(Model, variable, Adjustment, value) %>%
+                   pivot_wider(names_from = Model,
+                               values_from = value) %>%
+                   arrange(variable) %>%
+                   select(-variable)
+
+
+  property_info <- illustrative_properties %>%
+                   filter(property_label == property)
+
+  property_info <- property_info[1, ]
+
+
+  property_description <- paste0(property,
+                                 ": ",
+                                 property_info$example_description,
+                                 " in ",
+                                 as.character(property_info$municipality))
+
+
+  # Row positions:
+  #
+  # 1--2   Reference/time
+  # 3--15  Location effects
+  # 16--24 Structural effects
+  # 25--28 Aggregate results
+
+  latex_table <- kable(property_data,
+                       format = "latex",
+                       booktabs = TRUE,
+                       linesep = "",
+                       digits = 2,
+                       escape = TRUE,
+                       caption = paste0("Complete valuation decomposition for property ",
+                                        property,
+                                        " (",
+                                        property_info$example_description,
+                                        " in ",
+                                        as.character(property_info$municipality),
+                                        "). Individual model effects are multiplicative adjustments relative ",
+                                        "to the standardised reference property. Valuations are reported in million DKK."),
+                      label = paste0("illustrative_decomposition_", tolower(property))) %>%
+    kable_styling(full_width = FALSE,
+                  position = "center",
+                  latex_options = c("hold_position"),
+                  font_size = 8) %>%
+
+    pack_rows("Reference and valuation date", 1, 2, bold = TRUE) %>%
+    pack_rows("Location adjustments", 3, 15, bold = TRUE) %>%
+    pack_rows("Structural adjustments", 16, 24, bold = TRUE) %>%
+    pack_rows("Aggregate adjustments and valuation", 25, 28, bold = TRUE)
+
+
+  list(data = property_data,
+       latex = latex_table,
+       description = property_description)
+  
+}
+
+
+# ------------------------------------------------------------------------------
+# 6e. Generate decomposition tables A--E
+# ------------------------------------------------------------------------------
+
+decomposition_tables <- setNames(lapply(LETTERS[1:5], make_decomposition_table), LETTERS[1:5])
+
+
+combined_illustrative_tables <- c(
+
+  # Characteristics
+  as.character(tbl_illustrative_characteristics_latex),
+
+  "\\clearpage",
+
+  # Property A
+  as.character(decomposition_tables[["A"]]$latex),
+
+  "\\clearpage",
+
+  # Property B
+  as.character(decomposition_tables[["B"]]$latex),
+
+  "\\clearpage",
+
+  # Property C
+  as.character(decomposition_tables[["C"]]$latex),
+
+  "\\clearpage",
+
+  # Property D
+  as.character(decomposition_tables[["D"]]$latex),
+
+  "\\clearpage",
+
+  # Property E
+  as.character(decomposition_tables[["E"]]$latex)
+)
 
 
 # ------------------------------------------------------------------------------
@@ -2334,12 +2568,8 @@ plot_illustrative_properties
 # 11. Save results
 # ------------------------------------------------------------------------------
 
-saveRDS(illustrative_properties, "saved_files/illustrative_properties.rds")
-
+writeLines(combined_illustrative_tables, "saved_files/illustrative_valuations_full.tex")
 saveRDS(results_all_models, "saved_files/results_interpretation_property_models.rds")
-
-saveRDS(interpretation_decomposition, "saved_files/results_interpretation_decomposition.rds")
-
 saveRDS(plot_illustrative_properties, "saved_files/plot_illustrative_properties.rds")
 
 ```
@@ -2530,85 +2760,138 @@ performance_countrywide <- residual_df_all %>%
                            group_modify(~ calculate_performance(.x)) %>%
                            ungroup() %>%
                            mutate(MAE = round(MAE, digits = 0),
-                                  PRD = round(PRD, digits = 2)) %>%
+                                  PRD = round(PRD, digits = 2),
+                                  Specification = factor(Specification, levels = c("Parametric model", "Nationwide GAM", "Municipality-type GAM")),
+                                  dataset_type = factor(dataset_type, levels = c("Training", "Validation"))) %>%
                            arrange(Specification, dataset_type)
 
 
-performance_countrywide_display <- performance_countrywide %>%
-                                   rename(Model = Specification,
-                                          Type = dataset_type,
-                                          `MAPE [%]` = MAPE,
-                                          `MAE [DKK]` = MAE,
-                                          `PM20 [%]` = PM20,
-                                          `COD [%]` = COD)
+performance_countrywide_validation <- performance_countrywide %>%
+                                      filter(dataset_type == "Validation") %>%
+                                      select(Specification, MALE, MAPE, MAE, PM20, COD, PRD) %>%
+                                      rename(Model = Specification,
+                                             `MAPE [%]` = MAPE,
+                                             `MAE [DKK]` = MAE,
+                                             `PM20 [%]` = PM20,
+                                             `COD [%]` = COD)
 
 
-# Display countrywide table in notebook
-kable(performance_countrywide_display %>%
-      select(-N),
+# Display in notebook
+kable(performance_countrywide_validation,
       digits = 2,
-      caption = "Countrywide performance by model specification.",
+      caption = "Cross-validated countrywide performance by model specification.",
       booktabs = TRUE) %>%
-kable_styling(full_width = FALSE, position = "center") %>%
-collapse_rows(columns = 1, valign = "top")
+kable_styling(full_width = FALSE, position = "center")
 
 
-# Save countrywide table as LaTeX
-tbl_countrywide_latex <- kable(performance_countrywide_display %>%
-                               select(-N),
-                               format = "latex",
-                               booktabs = TRUE,
-                               digits = 2,
-                               caption = "Countrywide performance by model specification.",
-                               label = "perf_countrywide_models") %>%
-kable_styling(full_width = FALSE,
-              position = "center",
-              latex_options = c("hold_position")) %>%
-collapse_rows(columns = 1, valign = "top", latex_hline = "major")
+# Save as LaTeX
+tbl_countrywide_validation_latex <- kable(performance_countrywide_validation,
+                                          format = "latex",
+                                          booktabs = TRUE,
+                                          digits = 2,
+                                          caption = "Cross-validated countrywide performance by model specification.",
+                                          label = "perf_countrywide_models") %>%
+                                    kable_styling(full_width = FALSE,
+                                                  position = "center",
+                                                  latex_options = c("hold_position"))
 
-writeLines(tbl_countrywide_latex, "saved_files/performance_countrywide_models.tex")
+
+writeLines(tbl_countrywide_validation_latex, "saved_files/performance_countrywide_models.tex")
 
 
 # ------------------------------------------------------------------------------
 # 5. Performance by municipality type for all specifications
-#
-# Both training and validation metrics are retained. PRD is omitted within
-# municipality types because it is intended to assess vertical equity across
-# a sufficiently broad price distribution.
 # ------------------------------------------------------------------------------
 
 performance_municipality_type <- residual_df_all %>%
-                                 group_by(Specification, dataset_type, municipality_type) %>%
+                                 group_by(Specification,
+                                          dataset_type,
+                                          municipality_type) %>%
                                  group_modify(~ calculate_performance(.x)) %>%
                                  ungroup() %>%
                                  mutate(PRD = NA_real_,
-                                        MAE = round(MAE, digits = 0))
+                                        MAE = round(MAE, digits = 0),
+                                        Specification = factor(Specification,
+                                                               levels = c("Parametric model",
+                                                                          "Nationwide GAM",
+                                                                          "Municipality-type GAM")),
+                                        dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+                                        municipality_type = factor(municipality_type, levels = c("Capital",
+                                                                                                 "Commuter",
+                                                                                                 "Large city",
+                                                                                                 "Provincial",
+                                                                                                 "Rural"))) %>%
+                                 arrange(municipality_type, Specification, dataset_type)
 
 
-# Add Countrywide as another reporting group
+performance_municipality_validation <- performance_municipality_type %>%
+                                       filter(dataset_type == "Validation",
+                                              Specification == "Municipality-type GAM") %>%
+                                       select(municipality_type, MALE, MAPE, MAE, PM20, COD) %>%
+                                       rename(`Municipality type` = municipality_type,
+                                              `MAPE [%]` = MAPE,
+                                              `MAE [DKK]` = MAE,
+                                              `PM20 [%]` = PM20,
+                                              `COD [%]` = COD)
+
+
+# Display in notebook
+kable(performance_municipality_validation,
+      digits = 2,
+      caption = "Cross-validated performance of the municipality-type GAM by municipality type.",
+      booktabs = TRUE) %>%
+kable_styling(full_width = FALSE, position = "center")
+
+
+# Save as LaTeX
+tbl_municipality_validation_latex <- kable(performance_municipality_validation,
+                                           format = "latex",
+                                           booktabs = TRUE,
+                                           digits = 2,
+                                           caption = "Cross-validated performance of the municipality-type GAM by municipality type.",
+                                           label = "perf_municipality_type") %>%
+                                     kable_styling(full_width = FALSE,
+                                                   position = "center",
+                                                   latex_options = c("hold_position"))
+
+
+writeLines(tbl_municipality_validation_latex, "saved_files/performance_municipality_type.tex")
+
+
+# ------------------------------------------------------------------------------
+# 6. Full performance table
+#
+# Includes:
+#   - Countrywide + all municipality types
+#   - All three model specifications
+#   - Training + validation
+#   - PRD only countrywide
+# ------------------------------------------------------------------------------
+
 performance_countrywide_for_combined <- performance_countrywide %>%
                                         mutate(municipality_type = "Countrywide")
 
 
-performance_all_groups <- bind_rows(performance_countrywide_for_combined,
-                                    performance_municipality_type) %>%
-                                    mutate(municipality_type = factor(as.character(municipality_type), levels = c("Countrywide",
-                                                                                                                  "Capital",
-                                                                                                                  "Commuter",
-                                                                                                                  "Large city",
-                                                                                                                  "Provincial",
-                                                                                                                  "Rural")),
-                                           Specification = factor(Specification, levels = c("Parametric model", 
-                                                                                            "Nationwide GAM", 
-                                                                                            "Municipality-type GAM")),
+performance_all_groups <- bind_rows(performance_countrywide_for_combined, performance_municipality_type) %>%
+                          mutate(municipality_type = factor(as.character(municipality_type), levels = c("Countrywide",
+                                                                                                        "Capital",
+                                                                                                          "Commuter",
+                                                                                                        "Large city",
+                                                                                                        "Provincial",
+                                                                                                        "Rural")),
 
-                                           dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+                                 Specification = factor(as.character(Specification), levels = c("Parametric model", 
+                                                                                                "Nationwide GAM", 
+                                                                                                "Municipality-type GAM")),
 
-                                           PRD = if_else(municipality_type == "Countrywide", round(PRD, digits = 2), NA_real_)) %>%
-                                    arrange(municipality_type, Specification, dataset_type)
+                                 dataset_type = factor(as.character(dataset_type), levels = c("Training", "Validation")),
+
+                                 PRD = if_else(municipality_type == "Countrywide", round(PRD, digits = 2), NA_real_)) %>%
+                          arrange(municipality_type, Specification, dataset_type)
 
 
 performance_all_groups_display <- performance_all_groups %>%
+                                  select(municipality_type, Specification, dataset_type, MALE, MAPE, MAE, PM20, COD, PRD) %>%
                                   rename(`Municipality type` = municipality_type,
                                          Model = Specification,
                                          Type = dataset_type,
@@ -2618,36 +2901,34 @@ performance_all_groups_display <- performance_all_groups %>%
                                          `COD [%]` = COD)
 
 
-# Full table for notebook inspection
-kable(performance_all_groups_display %>%
-      select(-N),
+# Display full table in notebook
+kable(performance_all_groups_display,
       digits = 2,
       caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
       booktabs = TRUE) %>%
 kable_styling(full_width = FALSE,
               position = "center",
               bootstrap_options = c("striped", "condensed", "responsive")) %>%
-collapse_rows(columns = 1, valign = "top")
+collapse_rows(columns = 1:2,
+              valign = "top")
 
 
-# Save full comparison table as LaTeX
-tbl_all_groups_latex <- kable(performance_all_groups_display %>%
-                              select(-N),
+# Save full SI table as LaTeX
+tbl_all_groups_latex <- kable(performance_all_groups_display,
                               format = "latex",
                               booktabs = TRUE,
                               digits = 2,
                               caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
                               label = "perf_models_by_municipality") %>%
-                        kable_styling(full_width = FALSE,
-                                      position = "center",
-                                      latex_options = c("hold_position", "scale_down")) %>%
-                        collapse_rows(columns = 1, valign = "top", latex_hline = "major")
+kable_styling(full_width = FALSE, position = "center", latex_options = c("hold_position", "scale_down")) %>%
+collapse_rows(columns = 1:2, valign = "top", latex_hline = "major")
+
 
 writeLines(tbl_all_groups_latex, "saved_files/performance_models_by_municipality.tex")
 
 
 # ==============================================================================
-# 6. Residual diagnostics for GAM2 only
+# 7. Residual diagnostics for GAM2 only
 # ==============================================================================
 
 residual_df_validation <- residual_df_gam2 %>%
@@ -2656,7 +2937,7 @@ residual_df_validation <- residual_df_gam2 %>%
 
 
 # ------------------------------------------------------------------------------
-# 6.1 Validation residuals on the log scale
+# 7.1 Validation residuals on the log scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals_log <- ggplot(residual_df_validation,
@@ -2681,7 +2962,7 @@ print(plot_validation_residuals_log)
 
 
 # ------------------------------------------------------------------------------
-# 6.2 Validation residuals on the percentage scale
+# 7.2 Validation residuals on the percentage scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals_percent <- ggplot(residual_df_validation,
@@ -2716,7 +2997,7 @@ print(plot_validation_residuals_percent)
 
 
 # ------------------------------------------------------------------------------
-# 6.3 Validation residuals on the original price scale
+# 7.3 Validation residuals on the original price scale
 # ------------------------------------------------------------------------------
 
 plot_validation_residuals <- ggplot(residual_df_validation, aes(x = sales_price / 1e6, y = residual_sales_price / 1e6)) +
@@ -2743,7 +3024,7 @@ print(plot_validation_residuals)
 
 
 # ==============================================================================
-# 7. Training and validation error over time for GAM2 only
+# 8. Training and validation error over time for GAM2 only
 # ==============================================================================
 
 residual_df_gam2_plot <- residual_df_gam2 %>%
@@ -2752,7 +3033,7 @@ residual_df_gam2_plot <- residual_df_gam2 %>%
 
 
 # ------------------------------------------------------------------------------
-# 7.1 MALE over time
+# 8.1 MALE over time
 # ------------------------------------------------------------------------------
 
 plot_log_errors <- ggplot(residual_df_gam2_plot) +
@@ -2771,7 +3052,7 @@ print(plot_log_errors)
 
 
 # ------------------------------------------------------------------------------
-# 7.2 PM20 over time
+# 8.2 PM20 over time
 # ------------------------------------------------------------------------------
 
 plot_percentage_errors <- ggplot(residual_df_gam2_plot) +
@@ -2791,7 +3072,7 @@ print(plot_percentage_errors)
 
 
 # ------------------------------------------------------------------------------
-# 7.3 MAE over time
+# 8.3 MAE over time
 # ------------------------------------------------------------------------------
 
 plot_errors <- ggplot(residual_df_gam2_plot) +
