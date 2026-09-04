@@ -15,7 +15,7 @@ This notebook provides a walkthrough of the analysis and results described in se
 
 # 1. Reproducibility and setup 
 
-```{r setup, eval=TRUE}
+```{r setup, eval=TRUE, message=FALSE, warning=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(tidyr)
@@ -1650,29 +1650,33 @@ plot_factor_effect <- function(term_name) {
 # Køge remains at exactly zero because it is the reference category.
 
 municipality_plot_data <- df_municipality_parametric %>%
-                          mutate(municipality = fct_reorder(municipality, effect))
+                          arrange(effect) %>%
+                          mutate(municipality = factor(municipality, levels = municipality),
+                                 municipality_label = case_when(row_number() %in% c(1, 10, 20, 30, 40, 50, 60, 80, 90, n()) ~ as.character(municipality),
+                                  municipality == "Køge" ~ "Køge",
+                                  TRUE ~ ""))
 
 
-plot_municipality_parametric <- ggplot(municipality_plot_data,
-                                       aes(x = municipality,
-                                           y = effect)) +
+plot_municipality_parametric <- ggplot(municipality_plot_data, aes(x = municipality, y = effect)) +
 
-                                geom_hline(yintercept = 0,
-                                           linewidth = 0.4,
-                                           linetype = "dashed") +
+    geom_hline(yintercept = 0,
+               linewidth = 0.4,
+               linetype = "dashed") +
 
-                                geom_point(color = "black",
-                                           shape = parametric_shape,
-                                           size = comparison_point_size,
-                                           stroke = 1) +
+    geom_point(color = "black",
+               shape = parametric_shape,
+               size = comparison_point_size,
+               stroke = 1) +
 
-                                coord_flip() +
+    scale_x_discrete(labels = setNames(municipality_plot_data$municipality_label, municipality_plot_data$municipality)) +
 
-                                labs(x = NULL,
-                                     y = "Partial effect",
-                                     title = "Partial effect of municipality") +
+    coord_flip() +
 
-                                theme(axis.text.y = element_text(angle = 0, hjust = 1))
+    labs(x = NULL,
+         y = "Partial effect",
+         title = "Partial effect of municipality") +
+
+    theme(axis.text.y = element_text(angle = 0, hjust = 1))
 
 
 # ==============================================================================
@@ -2804,24 +2808,22 @@ writeLines(tbl_countrywide_validation_latex, "saved_files/performance_countrywid
 # ------------------------------------------------------------------------------
 
 performance_municipality_type <- residual_df_all %>%
-                                 group_by(Specification,
-                                          dataset_type,
-                                          municipality_type) %>%
+                                 group_by(Specification, dataset_type, municipality_type) %>%
                                  group_modify(~ calculate_performance(.x)) %>%
                                  ungroup() %>%
                                  mutate(PRD = NA_real_,
                                         MAE = round(MAE, digits = 0),
-                                        Specification = factor(Specification,
-                                                               levels = c("Parametric model",
-                                                                          "Nationwide GAM",
-                                                                          "Municipality-type GAM")),
-                                        dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
-                                        municipality_type = factor(municipality_type, levels = c("Capital",
-                                                                                                 "Commuter",
-                                                                                                 "Large city",
-                                                                                                 "Provincial",
-                                                                                                 "Rural"))) %>%
-                                 arrange(municipality_type, Specification, dataset_type)
+                                        Specification = factor(as.character(Specification), levels = c("Parametric model", 
+                                                                                                       "Nationwide GAM", 
+                                                                                                       "Municipality-type GAM"),
+                                         labels = c("Parametric", "Nationwide", "Municipality-type")),
+                                         dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+                                         municipality_type = factor(municipality_type, levels = c("Capital", 
+                                                                                                  "Commuter", 
+                                                                                                  "Large city", 
+                                                                                                  "Provincial", 
+                                                                                                  "Rural"))) %>%
+                                         arrange(municipality_type, Specification, dataset_type)
 
 
 performance_municipality_validation <- performance_municipality_type %>%
@@ -2868,32 +2870,65 @@ writeLines(tbl_municipality_validation_latex, "saved_files/performance_municipal
 #   - PRD only countrywide
 # ------------------------------------------------------------------------------
 
-performance_countrywide_for_combined <- performance_countrywide %>%
-                                        mutate(municipality_type = "Countrywide")
+performance_countrywide_for_combined <- performance_countrywide %>% mutate(municipality_type = "Countrywide")
 
 
 performance_all_groups <- bind_rows(performance_countrywide_for_combined, performance_municipality_type) %>%
                           mutate(municipality_type = factor(as.character(municipality_type), levels = c("Countrywide",
                                                                                                         "Capital",
-                                                                                                          "Commuter",
+                                                                                                        "Commuter",
                                                                                                         "Large city",
                                                                                                         "Provincial",
                                                                                                         "Rural")),
 
-                                 Specification = factor(as.character(Specification), levels = c("Parametric model", 
-                                                                                                "Nationwide GAM", 
-                                                                                                "Municipality-type GAM")),
+                                 Specification = case_when(grepl("Parametric", as.character(Specification), ignore.case = TRUE) ~ "Parametric",
+                                                           grepl("Nationwide", as.character(Specification), ignore.case = TRUE) ~ "Nationwide",
+                                                           grepl("Municipality", as.character(Specification), ignore.case = TRUE) ~ "Municipality-type",
+                                                           TRUE ~ as.character(Specification)),
+
+                                 Specification = factor(Specification, levels = c("Parametric", "Nationwide", "Municipality-type")),
 
                                  dataset_type = factor(as.character(dataset_type), levels = c("Training", "Validation")),
 
                                  PRD = if_else(municipality_type == "Countrywide", round(PRD, digits = 2), NA_real_)) %>%
+
                           arrange(municipality_type, Specification, dataset_type)
 
 
+# =============================================================================
+# Prepare table for display
+# =============================================================================
+
 performance_all_groups_display <- performance_all_groups %>%
-                                  select(municipality_type, Specification, dataset_type, MALE, MAPE, MAE, PM20, COD, PRD) %>%
-                                  rename(`Municipality type` = municipality_type,
-                                         Model = Specification,
+                                  select(municipality_type,
+                                         Specification,
+                                         dataset_type,
+                                         MALE,
+                                         MAPE,
+                                         MAE,
+                                         PM20,
+                                         COD,
+                                         PRD) %>%
+                                  mutate(municipality_type = as.character(municipality_type),
+                                         Specification = as.character(Specification),
+                                         dataset_type = as.character(dataset_type)) %>%
+                                  group_by(municipality_type) %>%
+                                  mutate(municipality_type_display = if_else(row_number() == 1, municipality_type, "")) %>%
+                                  ungroup() %>%
+                                  group_by(municipality_type, Specification) %>%
+                                  mutate(Specification_display = if_else(row_number() == 1, Specification, "")) %>%
+                                  ungroup() %>%
+                                  select(municipality_type_display,
+                                         Specification_display,
+                                         dataset_type,
+                                         MALE,
+                                         MAPE,
+                                         MAE,
+                                         PM20,
+                                         COD,
+                                         PRD) %>%
+                                  rename(`Municipality type` = municipality_type_display,
+                                         Model = Specification_display,
                                          Type = dataset_type,
                                          `MAPE [%]` = MAPE,
                                          `MAE [DKK]` = MAE,
@@ -2901,27 +2936,35 @@ performance_all_groups_display <- performance_all_groups %>%
                                          `COD [%]` = COD)
 
 
+# =============================================================================
 # Display full table in notebook
+# =============================================================================
+
 kable(performance_all_groups_display,
       digits = 2,
       caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
-      booktabs = TRUE) %>%
+      booktabs = TRUE,
+      na = "--") %>%
 kable_styling(full_width = FALSE,
               position = "center",
-              bootstrap_options = c("striped", "condensed", "responsive")) %>%
-collapse_rows(columns = 1:2,
-              valign = "top")
+              bootstrap_options = c("striped", "condensed", "responsive"))
 
 
+# =============================================================================
 # Save full SI table as LaTeX
+# =============================================================================
+
 tbl_all_groups_latex <- kable(performance_all_groups_display,
                               format = "latex",
                               booktabs = TRUE,
                               digits = 2,
+                              linesep = "",
                               caption = paste("Training and cross-validated performance by model specification", "and municipality type."),
-                              label = "perf_models_by_municipality") %>%
-kable_styling(full_width = FALSE, position = "center", latex_options = c("hold_position", "scale_down")) %>%
-collapse_rows(columns = 1:2, valign = "top", latex_hline = "major")
+                              label = "perf_models_by_municipality",
+                              na = "--") %>%
+                              kable_styling(full_width = FALSE,
+                                            position = "center",
+                                            latex_options = c("hold_position", "scale_down"))
 
 
 writeLines(tbl_all_groups_latex, "saved_files/performance_models_by_municipality.tex")
