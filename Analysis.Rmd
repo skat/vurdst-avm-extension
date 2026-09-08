@@ -2813,22 +2813,18 @@ performance_municipality_type <- residual_df_all %>%
                                  ungroup() %>%
                                  mutate(PRD = NA_real_,
                                         MAE = round(MAE, digits = 0),
-                                        Specification = factor(as.character(Specification), levels = c("Parametric model", 
-                                                                                                       "Nationwide GAM", 
-                                                                                                       "Municipality-type GAM"),
-                                         labels = c("Parametric", "Nationwide", "Municipality-type")),
-                                         dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
-                                         municipality_type = factor(municipality_type, levels = c("Capital", 
-                                                                                                  "Commuter", 
-                                                                                                  "Large city", 
-                                                                                                  "Provincial", 
-                                                                                                  "Rural"))) %>%
-                                         arrange(municipality_type, Specification, dataset_type)
-
+                                        Specification = case_when(grepl("Parametric", as.character(Specification), ignore.case = TRUE) ~ "Parametric",
+                                                                  grepl("Nationwide", as.character(Specification), ignore.case = TRUE) ~ "Nationwide",
+                                                                  grepl("Municipality", as.character(Specification), ignore.case = TRUE) ~ "Municipality-type",
+                                                                  TRUE ~ as.character(Specification)),
+                                        Specification = factor(Specification, levels = c("Parametric", "Nationwide", "Municipality-type")),
+                                        dataset_type = factor(dataset_type, levels = c("Training", "Validation")),
+                                        municipality_type = factor(municipality_type, levels = c("Capital", "Commuter", "Large city", "Provincial", "Rural"))) %>%
+                                        arrange(municipality_type, Specification, dataset_type)
 
 performance_municipality_validation <- performance_municipality_type %>%
                                        filter(dataset_type == "Validation",
-                                              Specification == "Municipality-type GAM") %>%
+                                              Specification == "Municipality-type") %>%
                                        select(municipality_type, MALE, MAPE, MAE, PM20, COD) %>%
                                        rename(`Municipality type` = municipality_type,
                                               `MAPE [%]` = MAPE,
@@ -2852,9 +2848,7 @@ tbl_municipality_validation_latex <- kable(performance_municipality_validation,
                                            digits = 2,
                                            caption = "Cross-validated performance of the municipality-type GAM by municipality type.",
                                            label = "perf_municipality_type") %>%
-                                     kable_styling(full_width = FALSE,
-                                                   position = "center",
-                                                   latex_options = c("hold_position"))
+                                     kable_styling(full_width = FALSE, position = "center", latex_options = c("hold_position"))
 
 
 writeLines(tbl_municipality_validation_latex, "saved_files/performance_municipality_type.tex")
