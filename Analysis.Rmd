@@ -2384,7 +2384,7 @@ reference_point <- tibble(
   reference_price = reference_price,
   adjustment_location = 1,
   adjustment_structural = 1) %>%
-  mutate(info_label = sprintf("R: Reference property\nReference price: %.1f million DKK\nLocation: ×1.00   Structural: ×1.00", reference_price / 1e6))
+  mutate(info_label = sprintf("R: Reference property\nReference price: %.2f million DKK\nLocation: ×1.00   Structural: ×1.00", reference_price / 1e6))
 
 
 # ------------------------------------------------------------------------------
@@ -2746,7 +2746,7 @@ calculate_performance <- function(data) {
   median_ratio <- median(data$ratio)
 
   tibble(N = nrow(data),
-         MALE = mean(abs(data$residual_sales_price_log)),
+         LMAPE = mean(abs(data$residual_sales_price_log)),
          MAPE = mean(abs(data$residual_sales_price_percent)),
          MAE = mean(abs(data$residual_sales_price)),
          PM20 = 100 * mean(abs(data$residual_sales_price_percent) <= 20),
@@ -2772,7 +2772,7 @@ performance_countrywide <- residual_df_all %>%
 
 performance_countrywide_validation <- performance_countrywide %>%
                                       filter(dataset_type == "Validation") %>%
-                                      select(Specification, MALE, MAPE, MAE, PM20, COD, PRD) %>%
+                                      select(Specification, LMAPE, MAPE, MAE, PM20, COD, PRD) %>%
                                       rename(Model = Specification,
                                              `MAPE [%]` = MAPE,
                                              `MAE [DKK]` = MAE,
@@ -2825,7 +2825,7 @@ performance_municipality_type <- residual_df_all %>%
 performance_municipality_validation <- performance_municipality_type %>%
                                        filter(dataset_type == "Validation",
                                               Specification == "Municipality-type") %>%
-                                       select(municipality_type, MALE, MAPE, MAE, PM20, COD) %>%
+                                       select(municipality_type, LMAPE, MAPE, MAE, PM20, COD) %>%
                                        rename(`Municipality type` = municipality_type,
                                               `MAPE [%]` = MAPE,
                                               `MAE [DKK]` = MAE,
@@ -2897,7 +2897,7 @@ performance_all_groups_display <- performance_all_groups %>%
                                   select(municipality_type,
                                          Specification,
                                          dataset_type,
-                                         MALE,
+                                         LMAPE,
                                          MAPE,
                                          MAE,
                                          PM20,
@@ -2915,7 +2915,7 @@ performance_all_groups_display <- performance_all_groups %>%
                                   select(municipality_type_display,
                                          Specification_display,
                                          dataset_type,
-                                         MALE,
+                                         LMAPE,
                                          MAPE,
                                          MAE,
                                          PM20,
@@ -2980,12 +2980,12 @@ residual_df_validation <- residual_df_gam2 %>%
 plot_validation_residuals_log <- ggplot(residual_df_validation,
                                  aes(x = sales_price / 1e6, y = residual_sales_price_log)) +
                                  geom_point(alpha = 0.6, color = "#6BAED6", size = 0.25) +
-                                 geom_smooth(aes(x = sales_price / 1e6, y = abs(residual_sales_price_log), linetype = "MALE"),
+                                 geom_smooth(aes(x = sales_price / 1e6, y = abs(residual_sales_price_log), linetype = "LMAPE"),
                                              se = FALSE,
                                              color = "black",
                                              linewidth = 0.8,
                                              inherit.aes = FALSE) +
-                                             scale_linetype_manual(name = NULL, values = c("MALE" = "solid"),
+                                             scale_linetype_manual(name = NULL, values = c("LMAPE" = "solid"),
                                  guide = guide_legend(override.aes = list(color = "black", linewidth = 0.8),
                                                       nrow = 1,
                                                       byrow = TRUE)) +
@@ -3070,7 +3070,7 @@ residual_df_gam2_plot <- residual_df_gam2 %>%
 
 
 # ------------------------------------------------------------------------------
-# 8.1 MALE over time
+# 8.1 LMAPE over time
 # ------------------------------------------------------------------------------
 
 plot_log_errors <- ggplot(residual_df_gam2_plot) +
@@ -3079,7 +3079,7 @@ plot_log_errors <- ggplot(residual_df_gam2_plot) +
                                se = FALSE,
                                color = "black",
                                linewidth = 0.8) +
-                   labs(x = "Sales date", y = "MALE") +
+                   labs(x = "Sales date", y = "LMAPE") +
                    theme(legend.title = element_blank(),
                          legend.position = c(0.5, 0.4))
 
@@ -3715,7 +3715,7 @@ saveRDS(residual_df_basis, "saved_files/residual_df_basis.rds")
 performance_basis <- residual_df_basis %>%
                      mutate(type = if_else(validation, "Validation error", "Training error")) %>%
                      group_by(type, municipality_type, value) %>%
-                     summarise(MALE = mean(abs(residual_sales_price_log)), .groups = "drop") %>%
+                     summarise(LMAPE = mean(abs(residual_sales_price_log)), .groups = "drop") %>%
                      rename(k = value)
 
 
@@ -3724,11 +3724,11 @@ performance_basis <- residual_df_basis %>%
 # ------------------------------------------------------------------------------
 
 plot_basis <- ggplot(performance_basis,
-                     aes(x = k, y = MALE, color = municipality_type, lty = type)) +
+                     aes(x = k, y = LMAPE, color = municipality_type, lty = type)) +
                      geom_line() +
                      geom_point() +
                      labs(x = "Number of spatial basis functions (k)",
-                          y = "MALE",
+                          y = "LMAPE",
                           color = "Municipality type")
 
 
@@ -4748,7 +4748,7 @@ summarise_lot_performance <- function(residual_df, group_vars) {
   
   residual_df %>% mutate(dataset_type = if_else(validation, "Validation", "Training")) %>%
                   group_by(across(all_of(group_vars))) %>%
-                  summarise(MALE = mean(abs(residual_sales_price_log), na.rm = TRUE),
+                  summarise(LMAPE = mean(abs(residual_sales_price_log), na.rm = TRUE),
                             MAPE = mean(abs(residual_sales_price_percent), na.rm = TRUE),
                             MAE = mean(abs(residual_sales_price), na.rm = TRUE),
                             PM20 = mean(abs(residual_sales_price_percent) <= 20, na.rm = TRUE) * 100,
@@ -4829,10 +4829,10 @@ plot_validation_residuals_log_lot_models <- ggplot(residual_df_validation_lot_mo
                                                        y = residual_sales_price_log,
                                                        color = model_approach)) +
                                             geom_point(alpha = 0.25, size = 0.25) +
-                                            geom_smooth(aes(y = abs(residual_sales_price_log), linetype = "MALE"),
+                                            geom_smooth(aes(y = abs(residual_sales_price_log), linetype = "LMAPE"),
                                                         se = FALSE,
                                                         linewidth = 0.8) +
-                                            scale_linetype_manual(name = NULL, values = c(MALE = "solid")) +
+                                            scale_linetype_manual(name = NULL, values = c(LMAPE = "solid")) +
                                             ylim(-1, 1) +
                                             labs(x = "Sales price [million DKK]", 
                                                  y = "Log residuals", 
@@ -4906,7 +4906,7 @@ plot_log_errors_lot_models <- ggplot(residual_df_lot_models) +
                                           se = FALSE,
                                           linewidth = 0.8) +
                               labs(x = "Sales date",
-                                   y = "MALE",
+                                   y = "LMAPE",
                                    color = NULL,
                                    linetype = NULL) +
                               theme_minimal()
@@ -5976,7 +5976,7 @@ saveRDS(results_all_models, "saved_files/results_interpretation_combined_models.
 # 5. Paper III: On the Accuracy of Hedonic Real Estate Models 
 
 ## 5.1 Learning curves
-The code below fits a list of models to increasing fractions of the training set and assesses their validation MALE. Learning curves for each municipality type are then plotted.
+The code below fits a list of models to increasing fractions of the training set and assesses their validation LMAPE. Learning curves for each municipality type are then plotted.
 
 ```{r Learning curves, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
 fractions <- c(0.1, 0.2, 0.5, 1.0)
@@ -6049,18 +6049,18 @@ saveRDS(residual_df_fraction, "saved_files/residual_df_fraction.rds")
 performance_fraction <- residual_df_fraction %>%
                         filter(validation) %>%
                         group_by(fraction, municipality_type) %>%
-                        summarise(MALE = mean(abs(residual_sales_price_log)),
+                        summarise(LMAPE = mean(abs(residual_sales_price_log)),
                                   .groups = "drop")
 
 plot_learning_curves <- ggplot(performance_fraction,
                                aes(x = fraction, 
-                                   y = MALE, 
+                                   y = LMAPE, 
                                    color = municipality_type)) +
                         geom_line(linewidth = 1) +
                         geom_point() +
                         scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
                         labs(x = "Percentage of training set",
-                             y = "Validation MALE",
+                             y = "Validation LMAPE",
                              color = "Municipality type") +
                         theme_minimal()
 
@@ -6475,7 +6475,7 @@ print(plot_folds_spread)
 
 
 ## 5.4 Interplay between market noise and data scarcity
-The code below examines the interplay between and noise and data scarcity by examining the validation MALE in the 2D space of KNN-averaged sales densities and sales prices. 
+The code below examines the interplay between and noise and data scarcity by examining the validation LMAPE in the 2D space of KNN-averaged sales densities and sales prices. 
 
 ```{r Interplay, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
 
@@ -6593,7 +6593,7 @@ plot_interplay <- ggplot(binned_data, aes(x = density_group,
                                           fill = mean_abs_resid)) +
                   geom_tile(color = "white") +
                   geom_text(aes(label = count), color = "black", size = 3) +
-                  scale_fill_viridis_c(name = "MALE") +
+                  scale_fill_viridis_c(name = "LMAPE") +
                   labs(x = NULL,
                        y = NULL) + 
                   theme_minimal()
