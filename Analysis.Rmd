@@ -2310,15 +2310,13 @@ illustrative_characteristics_table <- illustrative_characteristics %>%
 
 # LaTeX
 
-tbl_illustrative_characteristics_latex <- kable(
-  illustrative_characteristics_table,
-  format = "latex",
-  booktabs = TRUE,
-  linesep = "",
-  escape = FALSE,
-  caption = "Characteristics of the five illustrative valuation properties.",
-  label = "illustrative_property_characteristics"
-) %>%
+tbl_illustrative_characteristics_latex <- kable(illustrative_characteristics_table,
+                                                format = "latex",
+                                                booktabs = TRUE,
+                                                linesep = "",
+                                                escape = FALSE,
+                                                caption = "Characteristics of the five illustrative valuation properties.",
+                                                label = "illustrative_property_characteristics") %>%
   kable_styling(
     full_width = FALSE,
     position = "center",
