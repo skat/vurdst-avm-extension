@@ -326,47 +326,83 @@ grundsalg <- bind_rows(grundsalg_2020, grundsalg_2024) %>%
 # 2. Load properties
 # -------------------------
 
+process_vurderingsejendomme_chunk <- function(file) {
+
+  message("Processing: ", basename(file))
+
+  # Load one chunk only
+  vurderingsdata <- stream_in(xzfile(file, open = "rb"), verbose = FALSE)
+
+  # Extract units
+  enheder <- vurderingsdata %>%
+             transmute(vurderingsejendom_id_ice, enhed = map(vurderingsenheder, "enhed")) %>%
+             unpack_element("enhed")
+
+  # Extract land parcels
+  delgrunde <- vurderingsdata %>%
+               transmute(vurderingsejendom_id_ice, delgrund = map(vurderingsgrunde, "delgrund")) %>%
+               unpack_element("delgrund")
+
+  # Extract property-level information
+  vurinfo <- vurderingsdata %>%
+             select(vurinfo) %>%
+             unpack_element("vurinfo")
+
+  # The original nested object is no longer needed
+  rm(vurderingsdata)
+  gc()
+
+  # Combine units and land parcels
+  vurderingsejendomme_chunk <- full_join(enheder,
+                                         delgrunde,
+                                         by = c("vurderingsejendom_id_ice", "delgrund_info.delgrund_ids"),
+                                         relationship = "many-to-one")
+
+  # Objects have now been incorporated into the joined data
+  rm(enheder, delgrunde)
+  gc()
+
+  # Add property-level information
+  vurderingsejendomme_chunk <- left_join(vurderingsejendomme_chunk,
+                                         vurinfo,
+                                         by = "vurderingsejendom_id_ice")
+
+  rm(vurinfo)
+  gc()
+
+  # For overlapping fields, prioritize information from
+  # enhed/delgrund (.x), and use vurinfo (.y) when missing
+  pairs <- sub("\\.x$", "", grep("\\.x$", names(vurderingsejendomme_chunk), value = TRUE))
+
+  pairs <- pairs[paste0(pairs, ".y") %in% names(vurderingsejendomme_chunk)]
+
+  for (x in pairs) {
+
+    vurderingsejendomme_chunk[[x]] <- coalesce(vurderingsejendomme_chunk[[paste0(x, ".x")]],
+                                               vurderingsejendomme_chunk[[paste0(x, ".y")]])
+  }
+
+  vurderingsejendomme_chunk <- vurderingsejendomme_chunk %>%
+                               select(-all_of(c(paste0(pairs, ".x"), paste0(pairs, ".y")))) %>%
+                               select(any_of(variables))
+
+  gc()
+
+  vurderingsejendomme_chunk
+}
+
+
 chunks <- list.files(path = "/data/data/cyan_data/20250601_vuraar2024/",
                      pattern = "^[0-9]+-[0-9]+\\.ndjson\\.xz$",
                      recursive = TRUE,
                      full.names = TRUE)
 
-vurderingsdata <- future_map_dfr(chunks, \(x) stream_in(xzfile(x, open = "rb"), verbose = FALSE))
 
+# IMPORTANT:
+# Process sequentially to keep only one large raw chunk in memory at a time.
+vurderingsejendomme <- map_dfr(chunks, process_vurderingsejendomme_chunk)
 
-enheder <- vurderingsdata %>%
-           transmute(vurderingsejendom_id_ice, enhed = map(vurderingsenheder, "enhed")) %>%
-           unpack_element("enhed")
-
-delgrunde <- vurderingsdata %>%
-             transmute(vurderingsejendom_id_ice, delgrund = map(vurderingsgrunde, "delgrund")) %>%
-             unpack_element("delgrund")
-
-vurinfo <- vurderingsdata %>%
-           select(vurinfo) %>%
-           unpack_element("vurinfo")
-
-vurderingsejendomme <- full_join(enheder,
-                                 delgrunde,
-                                 by = c("vurderingsejendom_id_ice", "delgrund_info.delgrund_ids"),
-                                 relationship = "many-to-one")
-
-vurderingsejendomme <- left_join(vurderingsejendomme,
-                                 vurinfo,
-                                 by = c("vurderingsejendom_id_ice"))
-
-
-# For overlapping fields, prioritize information from enhed/delgrund (.x).
-# Only use the corresponding vurinfo value (.y) when the enhed/delgrund value is NA.
-
-pairs <- sub("\\.x$", "", grep("\\.x$", names(vurderingsejendomme), value = TRUE))
-pairs <- pairs[paste0(pairs, ".y") %in% names(vurderingsejendomme)]
-
-for (x in pairs) {vurderingsejendomme[[x]] <- coalesce(vurderingsejendomme[[paste0(x, ".x")]],  vurderingsejendomme[[paste0(x, ".y")]])}
-
-vurderingsejendomme <- vurderingsejendomme %>%
-                       select(-all_of(c(paste0(pairs, ".x"), paste0(pairs, ".y")))) %>%
-                       select(any_of(variables))
+gc()
 
 # -------------------------
 # 3. Enrich view variables of sales with information from properties
@@ -411,7 +447,7 @@ vurderingsejendomme <- left_join(vurderingsejendomme, geographical_subdivisions,
 # 5. Save data
 # -------------------------
 
-saveRDS(ejendomssalg, "ejendomssalg.rds")
-saveRDS(grundsalg, "grundsalg.rds")
-saveRDS(vurderingsejendomme, "vurderingsejendomme.rds")
+saveRDS(ejendomssalg, "ejendomssalg_ny.rds")
+saveRDS(grundsalg, "grundsalg_ny.rds")
+saveRDS(vurderingsejendomme, "vurderingsejendomme_ny.rds")
 
