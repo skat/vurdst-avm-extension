@@ -3885,7 +3885,7 @@ concurvity_heatmap_est <- pheatmap(conc_grouped_estimate,
                                    fontsize_row = 12,
                                    fontsize_col = 12,
                                    color        = viridis(100),
-                                   legend       = FALSE,                           
+                                   legend       = TRUE,                           
                                    breaks       = seq(0, 1, length.out = 100),
                                    border_color = NA,
                                    silent       = TRUE)

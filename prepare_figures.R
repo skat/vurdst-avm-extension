@@ -363,6 +363,8 @@ ggplot2::ggsave("Paper_figures/Figure3_SI.pdf", Figure3_SI, width = 15, height =
 ## Figure 4 (all other smooths effects) ##
 plot_smooths <- readRDS("saved_files/plot_smooths.rds")
 
+#plot_smooths <- lapply(plot_smooths, function(p) {p + labs(title = NULL)}) #strip titles
+
 Figure4_SI <- wrap_plots(plot_smooths, ncol = 2) +
               plot_layout(guides = "collect") &
               theme(legend.position = "bottom",
@@ -375,6 +377,8 @@ ggplot2::ggsave("Paper_figures/Figure4_SI.pdf", Figure4_SI, width = 15, height =
 
 ## Figure 5 (all factor effects) ##
 plot_factors <- readRDS("saved_files/plot_factors.rds")
+
+#plot_factors <- lapply(plot_factors, function(p) {p + labs(title = NULL)}) #strip titles
 
 Figure5_SI <- wrap_plots(plot_factors, ncol = 2) +
               plot_layout(guides = "collect") &
