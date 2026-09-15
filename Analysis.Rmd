@@ -7,11 +7,12 @@ header-includes:
   - \usepackage{xcolor}
 ---
 
-This notebook provides a walkthrough of the analysis and results described in several papers, which as of June 2026 are: 
+This notebook provides a walkthrough of the analysis and results described in several papers, which, as of the time of writing, are: 
 
 1) "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" (in review)
 2) "Property and Land value Predictions with Generalized Additive Models" (in preparation)
 3) "On the Accuracy of Hedonic Real Estate Models" (in preparation)
+
 
 # 1. Reproducibility and setup 
 
@@ -70,168 +71,45 @@ for (f in c("saved_files", "checkpoints")) {
 
 
 
-# 2. Data 
+# 2. Data
 
-## 2.1 The dataset
-The analysis is based on a dataset of single-family home sales, single-family lot sales and properties in Denmark from 1 January 2014 to 1 January 2024. The dataset, included as a .rds file in this repository, is loaded and inspected below.
+## 2.1 Analysis dataset
 
-```{r Load dataset, eval=TRUE, echo=TRUE, warning=FALSE}
+The analysis is based on the processed dataset constructed in Datasets.Rmd.
+It contains single-family property sales and vacant-lot sales in Denmark from
+1 January 2014 to 1 January 2024, together with single-family properties as of
+1 January 2024. The dataset is included in the repository as
+model_dataset.rds and is loaded below together with the coordinate grid used
+in the spatial analyses.
 
-#Externally defined coordinate grid of Denmark
+```{r Load dataset}
+
+# Coordinate grid used for spatial analyses
 coordinate_grid <- read.csv2("coordinates_ocean_land.csv")
 
-#Load data set
+# Final analysis dataset
 dataset <- readRDS("model_dataset.rds")
 
-#The three types included in the dataset. 
+# Number of observations by type
 table(dataset$type)
 
 ```
 
 ## 2.2 Descriptive statistics
-In the subsequent cells histograms of selected variables are produced. These histograms are for the raw variables before any imputations and variable conversions take place.
 
-```{r Continuous variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
-# ------------------------------------------------------------------------------
-# Labels and plotting parameters
-# ------------------------------------------------------------------------------
-
-get_label <- function(var, labels_vec) {
-  
-  lbl <- tryCatch(labels_vec[[var]], error = function(e) NULL)
-  if (is.null(lbl) || is.na(lbl)) var else lbl
-  
-}
+The distributions of the variables used in the subsequent analyses are shown
+below, separately for property sales, lot sales, and valuation properties. The
+figures describe the variables before the transformations and imputations
+introduced in Section 2.3. For each variable, the number of available
+observations and the share of missing values are reported. For variables with
+a large point mass at zero, the histogram is shown conditional on positive
+values and the share of zeros is reported separately.
 
 
-# Variables for which zeros are excluded from the plotted distribution
-# Zero prevalence is still reported in the summary annotation.
-exclude_zero_variables <- c("ocean_view", "lake_view", "forest_size")
-
-
-# Common colours for the three dataset components
-type_colors <- c("Property sale" = "#0072B2", "Lot sale" = "#E69F00", "Property" = "#009E73")
-
+```{r Continuous variables, fig.width=20, fig.height=30}
 
 # ------------------------------------------------------------------------------
-# Plot one continuous variable
-# ------------------------------------------------------------------------------
-
-plot_continuous <- function(df, var, label) {
-
-  plot_data <- df %>% select(type, value = all_of(var))
-
-  # --------------------------------------------------------------------------
-  # Convert sales date to decimal year
-  # --------------------------------------------------------------------------
-
-  if (var == "sales_date") {
-    
-    plot_data <- plot_data %>% mutate(value = decimal_date(as.Date(value)))
-    
-  }
-
-
-  # --------------------------------------------------------------------------
-  # Summary statistics by dataset component
-  # --------------------------------------------------------------------------
-
-  summary_data <- plot_data %>%
-                  group_by(type) %>%
-                  summarise(n_available = sum(!is.na(value)),
-                            missing_pct = 100 * mean(is.na(value)),
-                            zero_pct = 100 * mean(value == 0, na.rm = TRUE),
-                            .groups = "drop") %>%
-                  filter(n_available > 0) %>%
-                  mutate(label = paste0(type, ": n = ", 
-                         comma(n_available), 
-                         ", missing = ", 
-                         number(missing_pct, accuracy = 0.1), 
-                         "%, zero = ", 
-                         number(zero_pct, accuracy = 0.1), "%"))
-
-
-  # --------------------------------------------------------------------------
-  # Data used for histogram
-  # --------------------------------------------------------------------------
-
-  histogram_data <- plot_data %>% filter(!is.na(value), is.finite(value))
-
-  # For zero-inflated environmental variables, show the distribution
-  # conditional on a positive value. The fraction of zeros is reported above.
-  if (var %in% exclude_zero_variables) {
-
-    histogram_data <- histogram_data %>% filter(value > 0)
-    
-  }
-
-  if (nrow(histogram_data) == 0L) {return(NULL)}
-
-
-  # --------------------------------------------------------------------------
-  # Plot
-  # --------------------------------------------------------------------------
-
-  p <- ggplot(histogram_data,
-              aes(x = value,
-                  y = after_stat(density),
-                  fill = type,
-                  color = type)) +
-
-       geom_histogram(bins = 30,
-                      position = "identity",
-                      alpha = 0.28,
-                      linewidth = 0.35) +
-
-       scale_color_manual(values = type_colors,
-                          breaks = names(type_colors),
-                          drop = FALSE) +
-
-       scale_fill_manual(values = type_colors,
-                         breaks = names(type_colors),
-                         drop = FALSE) +
-
-       labs(title = label,
-            x = NULL,
-            y = "Density",
-            color = NULL,
-            fill = NULL) +
-
-       theme_minimal(base_size = 11) +
-
-       theme(plot.title = element_text(size = 12, face = "bold"),
-             panel.grid.minor = element_blank(),
-             panel.grid.major.x = element_blank(),
-             legend.position = "none")
-
-
-  # --------------------------------------------------------------------------
-  # Compact summary in upper-right corner
-  # --------------------------------------------------------------------------
-
-  summary_data <- summary_data %>%
-                  arrange(match(type, names(type_colors))) %>%
-                  mutate(vjust = seq(1, by = 1.25, length.out = n()))
-
-  for (i in seq_len(nrow(summary_data))) {
-
-    p <- p + annotate("text",
-                      x = Inf,
-                      y = Inf,
-                      label = summary_data$label[i],
-                      hjust = 1.02,
-                      vjust = summary_data$vjust[i],
-                      size = 3.1,
-                      color = type_colors[[summary_data$type[i]]])
-  }
-
-  p
-
-}
-
-
-# ------------------------------------------------------------------------------
-# Continuous variables
+# Variables and plotting parameters
 # ------------------------------------------------------------------------------
 
 variables_continuous <- c(sales_price = "Sales price [DKK]",
@@ -259,23 +137,117 @@ variables_continuous <- c(sales_price = "Sales price [DKK]",
 
 vars_cont <- intersect(names(variables_continuous), names(dataset))
 
+# Variables for which zeros are excluded from the plotted distribution.
+# The share of zeros is still reported in the summary annotation.
+exclude_zero_variables <- c("ocean_view", "lake_view", "forest_size")
+
+# Common colours for the three dataset components
+type_colors <- c("Property sale" = "#0072B2", "Lot sale" = "#E69F00", "Property" = "#009E73")
+
+
+# ------------------------------------------------------------------------------
+# Plot one continuous variable
+# ------------------------------------------------------------------------------
+
+plot_continuous <- function(df, var, label) {
+
+  plot_data <- df %>% select(type, value = all_of(var))
+
+  # Convert sales date to decimal year
+  if (var == "sales_date") {
+    plot_data <- plot_data %>% mutate(value = decimal_date(as.Date(value)))
+  }
+
+  # Summary statistics by dataset component
+  summary_data <- plot_data %>%
+                  group_by(type) %>%
+                  summarise(n_available = sum(!is.na(value)),
+                            missing_pct = 100 * mean(is.na(value)),
+                            zero_pct = 100 * mean(value == 0, na.rm = TRUE),
+                            .groups = "drop") %>%
+                  filter(n_available > 0) %>%
+                  mutate(label = paste0(type,
+                                        ": n = ", comma(n_available),
+                                        ", missing = ", number(missing_pct, accuracy = 0.1), "%",
+                                        ", zero = ", number(zero_pct, accuracy = 0.1), "%"))
+
+  # Data used for histogram
+  histogram_data <- plot_data %>% filter(!is.na(value), is.finite(value))
+
+  # For zero-inflated environmental variables, show the distribution
+  # conditional on a positive value.
+  if (var %in% exclude_zero_variables) {
+    histogram_data <- histogram_data %>% filter(value > 0)
+  }
+
+  if (nrow(histogram_data) == 0L) {
+    return(NULL)
+  }
+
+  # Plot
+  p <- ggplot(histogram_data,
+              aes(x = value,
+                  y = after_stat(density),
+                  fill = type,
+                  color = type)) +
+       geom_histogram(bins = 30,
+                      position = "identity",
+                      alpha = 0.28,
+                      linewidth = 0.35) +
+       scale_color_manual(values = type_colors,
+                          breaks = names(type_colors),
+                          drop = FALSE) +
+       scale_fill_manual(values = type_colors,
+                         breaks = names(type_colors),
+                         drop = FALSE) +
+       labs(title = label,
+            x = NULL,
+            y = "Density",
+            color = NULL,
+            fill = NULL) +
+      theme_minimal(base_size = 11) +
+      theme(plot.title = element_text(size = 12, face = "bold"),
+            panel.grid.minor = element_blank(),
+            panel.grid.major.x = element_blank(),
+            legend.position = "none")
+
+  # Compact summary in upper-right corner
+  summary_data <- summary_data %>%
+                  arrange(match(type, names(type_colors))) %>%
+                  mutate(vjust = seq(1, by = 1.25, length.out = n()))
+
+  for (i in seq_len(nrow(summary_data))) {
+
+    p <- p + annotate("text",
+                      x = Inf,
+                      y = Inf,
+                      label = summary_data$label[i],
+                      hjust = 1.02,
+                      vjust = summary_data$vjust[i],
+                      size = 3.1,
+                      color = type_colors[[summary_data$type[i]]])
+  }
+
+  p
+}
+
 
 # ------------------------------------------------------------------------------
 # Construct plots
 # ------------------------------------------------------------------------------
 
-histograms_cont <- map(vars_cont, ~ plot_continuous(dataset, .x, get_label(.x, variables_continuous)))
+plots_continuous <- map(vars_cont, ~ plot_continuous(dataset, .x, variables_continuous[[.x]]))
 
-names(histograms_cont) <- vars_cont
+names(plots_continuous) <- vars_cont
 
-histograms_cont <- Filter(Negate(is.null), histograms_cont)
+plots_continuous <- Filter(Negate(is.null), plots_continuous)
 
 
 # ------------------------------------------------------------------------------
 # Save
 # ------------------------------------------------------------------------------
 
-saveRDS(histograms_cont, "saved_files/histograms_continuous.rds")
+saveRDS(plots_continuous, "saved_files/plots_continuous.rds")
 
 
 # ------------------------------------------------------------------------------
@@ -283,13 +255,13 @@ saveRDS(histograms_cont, "saved_files/histograms_continuous.rds")
 # ------------------------------------------------------------------------------
 
 legend_plot <- ggplot(dataset,
-                      aes(x = 1, y = 1, fill = type, color = type)) +
-                      geom_point(shape = 21, size = 3) +
-                      scale_color_manual(values = type_colors, breaks = names(type_colors)) +
-                      scale_fill_manual(values = type_colors, breaks = names(type_colors)) +
-                      labs(color = NULL, fill = NULL) +
-              theme_void() +
-              theme(legend.position = "bottom")
+               aes(x = 1, y = 1, fill = type, color = type)) +
+               geom_point(shape = 21, size = 3) +
+               scale_color_manual(values = type_colors, breaks = names(type_colors)) +
+               scale_fill_manual(values = type_colors, breaks = names(type_colors)) +
+               labs(color = NULL, fill = NULL) +
+               theme_void() +
+               theme(legend.position = "bottom")
 
 common_legend <- get_legend(legend_plot)
 
@@ -298,13 +270,13 @@ common_legend <- get_legend(legend_plot)
 # Display
 # ------------------------------------------------------------------------------
 
-plots_combined <- wrap_plots(histograms_cont, ncol = 3)
-
+plots_combined <- wrap_plots(plots_continuous, ncol = 3)
 plot_grid(plots_combined, common_legend, ncol = 1, rel_heights = c(1, 0.04))
 
 ```
 
-```{r Categorical variables, eval=TRUE, echo=TRUE, warning=FALSE, fig.width=20, fig.height=30}
+
+```{r Categorical variables, fig.width=20, fig.height=30}
 
 # ------------------------------------------------------------------------------
 # Categorical variables and display labels
@@ -322,11 +294,6 @@ variables_categorical <- c(house_type = "House type",
 
 vars_cat <- intersect(names(variables_categorical), names(dataset))
 
-# ------------------------------------------------------------------------------
-# Common colours
-# ------------------------------------------------------------------------------
-
-type_colors <- c("Property sale" = "#0072B2", "Lot sale" = "#E69F00", "Property" = "#009E73")
 
 # ------------------------------------------------------------------------------
 # Plot one categorical variable
@@ -336,10 +303,7 @@ plot_categorical <- function(df, var, label) {
 
   plot_data <- df %>% select(type, value = all_of(var))
 
-  # --------------------------------------------------------------------------
   # Summary information by dataset component
-  # --------------------------------------------------------------------------
-
   summary_data <- plot_data %>%
                   group_by(type) %>%
                   summarise(n_available = sum(!is.na(value)),
@@ -347,17 +311,10 @@ plot_categorical <- function(df, var, label) {
                             .groups = "drop") %>%
                   filter(n_available > 0) %>%
                   mutate(label = paste0(type,
-                                        ": n = ",
-                                        comma(n_available),
-                                        ", missing = ",
-                                        number(missing_pct, accuracy = 0.1),
-                                        "%"))
+                                        ": n = ", comma(n_available),
+                                        ", missing = ", number(missing_pct, accuracy = 0.1), "%"))
 
-
-  # --------------------------------------------------------------------------
   # Category proportions within each dataset component
-  # --------------------------------------------------------------------------
-
   bar_data <- plot_data %>%
               filter(!is.na(value)) %>%
               mutate(value = factor(value)) %>%
@@ -368,11 +325,7 @@ plot_categorical <- function(df, var, label) {
 
   if (nrow(bar_data) == 0L) {return(NULL)}
 
-
-  # --------------------------------------------------------------------------
   # Keep category ordering common across all three dataset components
-  # --------------------------------------------------------------------------
-
   category_order <- bar_data %>%
                     group_by(value) %>%
                     summarise(total = sum(n), .groups = "drop") %>%
@@ -380,18 +333,11 @@ plot_categorical <- function(df, var, label) {
                     pull(value) %>%
                     as.character()
 
-  bar_data <- bar_data %>%
-              mutate(value = factor(value, levels = category_order))
+  bar_data <- bar_data %>% mutate(value = factor(value, levels = category_order))
 
-
-  # --------------------------------------------------------------------------
   # Plot
-  # --------------------------------------------------------------------------
-
   p <- ggplot(bar_data,
-              aes(x = value,
-                  y = proportion,
-                  fill = type)) +
+       aes(x = value, y = proportion, fill = type)) +
        geom_col(position = position_dodge(width = 0.8),
                 width = 0.72,
                 color = "white",
@@ -400,7 +346,10 @@ plot_categorical <- function(df, var, label) {
                          breaks = names(type_colors),
                          drop = FALSE) +
        scale_y_continuous(labels = percent_format(accuracy = 1), expand = expansion(mult = c(0, 0.15))) +
-       labs(title = label, x = NULL, y = "Share", fill = NULL) +
+       labs(title = label,
+            x = NULL,
+            y = "Share",
+            fill = NULL) +
        theme_minimal(base_size = 11) +
        theme(plot.title = element_text(size = 12, face = "bold"),
              axis.text.x = element_text(angle = 40, hjust = 1),
@@ -408,11 +357,7 @@ plot_categorical <- function(df, var, label) {
              panel.grid.major.x = element_blank(),
              legend.position = "none")
 
-
-  # --------------------------------------------------------------------------
   # Compact summary in upper-right corner
-  # --------------------------------------------------------------------------
-
   summary_data <- summary_data %>%
                   arrange(match(type, names(type_colors))) %>%
                   mutate(vjust = seq(1, by = 1.25, length.out = n()))
@@ -427,30 +372,28 @@ plot_categorical <- function(df, var, label) {
                       vjust = summary_data$vjust[i],
                       size = 3.1,
                       color = type_colors[[summary_data$type[i]]])
-    
   }
 
   p
-  
 }
 
 
 # ------------------------------------------------------------------------------
-# Construct categorical plots
+# Construct plots
 # ------------------------------------------------------------------------------
 
-histograms_cat <- map(vars_cat, ~ plot_categorical(dataset, .x, get_label(.x, variables_categorical)))
+plots_categorical <- map(vars_cat, ~ plot_categorical(dataset, .x, variables_categorical[[.x]]))
 
-names(histograms_cat) <- vars_cat
+names(plots_categorical) <- vars_cat
 
-histograms_cat <- Filter(Negate(is.null), histograms_cat)
+plots_categorical <- Filter(Negate(is.null), plots_categorical)
 
 
 # ------------------------------------------------------------------------------
 # Save
 # ------------------------------------------------------------------------------
 
-saveRDS(histograms_cat, "saved_files/histograms_categorical.rds") 
+saveRDS(plots_categorical, "saved_files/plots_categorical.rds")
 
 
 # ------------------------------------------------------------------------------
@@ -458,7 +401,7 @@ saveRDS(histograms_cat, "saved_files/histograms_categorical.rds")
 # ------------------------------------------------------------------------------
 
 legend_plot <- ggplot(dataset,
-                      aes(x = 1, y = 1, fill = type)) +
+               aes(x = 1, y = 1, fill = type)) +
                geom_point(shape = 21, size = 3) +
                scale_fill_manual(values = type_colors, breaks = names(type_colors)) +
                labs(fill = NULL) +
@@ -472,35 +415,44 @@ common_legend <- get_legend(legend_plot)
 # Display
 # ------------------------------------------------------------------------------
 
-plots_combined <- wrap_plots(histograms_cat, ncol = 3)
-
-plot_grid(plots_combined,
-          common_legend,
-          ncol = 1,
-          rel_heights = c(1, 0.05))
+plots_combined <- wrap_plots(plots_categorical, ncol = 3)
+plot_grid(plots_combined, common_legend, ncol = 1, rel_heights = c(1, 0.05))
 
 ```
 
-## 2.3 Transformation and imputation
-Prior to model fitting, categorical variables are converted to factors, missing values are imputed, and a small number of auxiliary variables are constructed. Continuous reference values are defined centrally and subsequently used both for model interpretation and, where appropriate, for imputation. This ensures that the same values are used consistently throughout preprocessing, model specification, and valuation.
+
+## 2.3 Variable transformation and imputation
+
+Prior to model fitting, categorical variables are converted to factors,
+missing values are imputed, and auxiliary variables required by the models are
+constructed. Continuous reference values are defined centrally and are
+subsequently used for model interpretation and, where applicable, imputation.
+This ensures that identical reference values are used throughout preprocessing,
+model specification, and valuation.
 
 Missing values are treated according to the following rules:
 
-- year_rebuilt: Missing values and rebuilt years before 1970 are replaced by 1970.
+- year_rebuilt: Missing values and rebuilding years before 1970 are replaced
+  by the reference value 1970.
 
-- maximum_coverage_percentage: Missing values are imputed to 30%, corresponding to a typical allowed building coverage percentage in Denmark.
+- maximum_coverage_percentage: Missing values are imputed to 30%,
+  corresponding to a typical allowed building coverage percentage in Denmark.
 
-- subdivision_size: Missing values are imputed to 700 m$^2$.
+- subdivision_size: Missing values are imputed to 700 m².
 
-- Distance variables: Missing values are replaced by the maximum measurement threshold of the respective variable.
+- Distance variables: Missing values are replaced by the maximum measurement
+  threshold of the respective variable.
 
 The following auxiliary variables are additionally constructed:
 
-- Numeric sales date: A continuous decimal-year representation of the transaction date.
+- sales_date_numeric: A continuous decimal-year representation of the
+  transaction date.
 
-- Number of subdivisions: Defined as lot size divided by subdivision size, rounded down to the nearest integer and bounded below by one.
+- number_of_divisions: The lot size divided by the minimum subdivision size,
+  rounded down to the nearest integer and bounded below by one.
 
-```{r Variable conversion and imputation, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+
+```{r Variable conversion and imputation, results='hide'}
 
 # ------------------------------------------------------------------------------
 # Reference and imputation values
@@ -516,7 +468,7 @@ variable_spec <- tribble(~variable, ~reference, ~imputation,
                          "lot_size", 800, NA,
                          "number_of_bathrooms", 1, NA,
                          "coast_distance", 1500, 1500,
-                         "lake_distance", 500, 500,
+                         "lake_distance",  500,  500,
                          "stream_distance", 1000, 1000,
                          "road_distance", 2000, 2000,
                          "highway_distance", 2000, 2000,
@@ -532,6 +484,7 @@ variable_spec <- tribble(~variable, ~reference, ~imputation,
 reference_values <- setNames(variable_spec$reference, variable_spec$variable)
 imputation_values <- setNames(variable_spec$imputation, variable_spec$variable)
 
+
 # ------------------------------------------------------------------------------
 # Factor reference levels
 # ------------------------------------------------------------------------------
@@ -543,7 +496,12 @@ factor_references <- c(municipality_type = "Provincial",
                        wall_type = "Brick",
                        heating_type = "District heating")
 
-for (v in names(factor_references)) {dataset[[v]] <- relevel(factor(dataset[[v]]), ref = factor_references[[v]])}
+for (v in names(factor_references)) {
+
+  dataset[[v]] <- relevel(factor(dataset[[v]]), ref = factor_references[[v]])
+  
+}
+
 
 # ------------------------------------------------------------------------------
 # Auxiliary date variable
@@ -551,23 +509,30 @@ for (v in names(factor_references)) {dataset[[v]] <- relevel(factor(dataset[[v]]
 
 dataset <- dataset %>% mutate(sales_date = as.Date(sales_date), sales_date_numeric = decimal_date(sales_date))
 
+
 # ------------------------------------------------------------------------------
 # Missing values
 # ------------------------------------------------------------------------------
 
-# Rebuilt year requires the additional rule that years before 1970 are replaced
+# Missing rebuilding years and rebuilding years before the reference year
+# are assigned the reference value.
 
 dataset <- dataset %>% mutate(year_rebuilt = if_else(is.na(year_rebuilt) | year_rebuilt < reference_values[["year_rebuilt"]],
                               reference_values[["year_rebuilt"]],
                               year_rebuilt))
 
-# Remaining variables with explicit imputation values
+# Impute remaining variables with explicitly defined imputation values.
 
-variables_to_impute <- variable_spec %>% 
+variables_to_impute <- variable_spec %>%
                        filter(!is.na(imputation), variable != "year_rebuilt") %>%
                        pull(variable)
 
-for (v in variables_to_impute) {dataset[[v]] <- replace_na(dataset[[v]], imputation_values[[v]])}
+for (v in variables_to_impute) {
+
+  dataset[[v]] <- replace_na(dataset[[v]], imputation_values[[v]])
+  
+}
+
 
 # ------------------------------------------------------------------------------
 # Auxiliary variables
@@ -575,6 +540,7 @@ for (v in variables_to_impute) {dataset[[v]] <- replace_na(dataset[[v]], imputat
 
 dataset <- dataset %>% mutate(number_of_divisions = pmax(1, floor(lot_size / subdivision_size)))
 
+# ------------------------------------------------------------------------------
 # Separate property sales, lot sales and valuation properties
 # ------------------------------------------------------------------------------
 
@@ -583,46 +549,70 @@ dataset_property_sales <- dataset %>%
                           mutate(type = factor(type, levels = c("Lot sale", "Property sale")),
                                  type_ordered = ordered(type, levels = c("Lot sale", "Property sale")))
 
-dataset_lot_sales <- dataset %>% 
+dataset_lot_sales <- dataset %>%
                      filter(type == "Lot sale") %>%
                      mutate(type = factor(type, levels = c("Lot sale", "Property sale")),
                             type_ordered = ordered(type, levels = c("Lot sale", "Property sale")))
 
-dataset_properties <- dataset %>% 
+dataset_properties <- dataset %>%
                       filter(type == "Property") %>%
                       mutate(sales_date_numeric = reference_values[["sales_date_numeric"]])
 
+
 # ------------------------------------------------------------------------------
-# Check that there are no remaining NA values among property sales
+# Check preprocessing
 # ------------------------------------------------------------------------------
-which(is.na(dataset_property_sales))
+
+# No missing values should remain in the property-sales modelling data.
+stopifnot(!anyNA(dataset_property_sales))
 
 ```
 
-## 2.4 Cross-validation design 
-The property sales and lot sales are partitioned into four cross-validation folds ($K=4$). The resulting folds are subsequently used both to estimate out-of-sample predictive performance and to assess the robustness of the fitted models to perturbations of the training data. The same property-sale folds are used for all three model specifications.
+## 2.4 Cross-validation design
 
-```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+Property sales and lot sales are partitioned into four cross-validation folds
+($N=4$). Fold assignment is performed separately within each municipality to
+obtain approximately balanced representation of municipalities across folds.
+The resulting folds are subsequently used both to estimate out-of-sample
+predictive performance and to assess the robustness of the fitted models to
+perturbations of the training data. The same property-sale folds are used
+across all model specifications to ensure that their predictive performance is
+evaluated on identical validation samples.
+
+
+```{r Cross-validation, results='hide'}
+
+# ------------------------------------------------------------------------------
+# Assign cross-validation folds
+# ------------------------------------------------------------------------------
 
 assign_cv_folds <- function(data, N, seed = 123) {
 
   set.seed(seed)
 
   data %>% 
-  group_by(municipality) %>% #try to keep at least one municipality in each fold for parametric model
-  mutate(validation_set = sample(rep(seq_len(N), length.out = n())), .rand = runif(n())) %>% 
+  group_by(municipality) %>%
+  mutate(validation_set = sample(rep(seq_len(N), length.out = n()))) %>%
   ungroup()
-
+  
 }
+
 
 dataset_property_sales_cv <- assign_cv_folds(dataset_property_sales, N = N, seed = 123)
 dataset_lot_sales_cv <- assign_cv_folds(dataset_lot_sales, N = N, seed = 123)
 
+
+# ------------------------------------------------------------------------------
+# Check cross-validation folds
+# ------------------------------------------------------------------------------
+
 table(dataset_property_sales_cv$validation_set, useNA = "ifany")
+
 table(dataset_lot_sales_cv$validation_set, useNA = "ifany")
 
-```
+stopifnot(all(dataset_property_sales_cv$validation_set %in% seq_len(N)), all(dataset_lot_sales_cv$validation_set %in% seq_len(N)))
 
+```
 
 # 3. Paper I: "Generalized Additive Models for Mass Appraisal: Evidence from the Danish Public Property Valuation System" 
 
