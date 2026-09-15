@@ -602,7 +602,7 @@ which(is.na(dataset_property_sales))
 ## 2.4 Cross-validation design 
 The property sales and lot sales are partitioned into four cross-validation folds ($K=4$). The resulting folds are subsequently used both to estimate out-of-sample predictive performance and to assess the robustness of the fitted models to perturbations of the training data. The same property-sale folds are used for all three model specifications.
 
-```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Cross-validation, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 
 assign_cv_folds <- function(data, N, seed = 123) {
 
@@ -884,7 +884,7 @@ if (load) {
 #### Spatial smooths 
 The code below extracts the spatial smooth for each model and plots it alongside the log-scale standard error. The plotting relies on a premade spatial grid of Denmark, where ocean and land are marked. 
 
-```{r Spatial smooths property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Spatial smooths property models, eval=TRUE, echo=TRUE, warning=FALSE, results='hide', fig.width=20, fig.height=30}
 
 # 1a) Predict once per model and store results
 prediction_results <- future_lapply(seq_along(models_gam2), function(i) {
@@ -1024,7 +1024,7 @@ wrap_plots(plot_spatial_smooths, ncol = 3)
 #### Other smooth effects 
 The code below extracts and plots the remaining smooth effects of the trained GAM-models. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model 1. 
 
-```{r Other smooth effects property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Other smooth effects property models, eval=TRUE, echo=TRUE, warning=FALSE, results='hide', fig.width=20, fig.height=30}
 
 smooth_variables <- c(sales_date_numeric = "Sales date",
                       year_built = "Year built",
@@ -1308,7 +1308,7 @@ theme(legend.position = "bottom",
 #### Factor effects
 The code below extracts and plots the factor effects of the trained GAM-models. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
-```{r Factor effects property models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
+```{r Factor effects property models, eval=TRUE, echo=TRUE, warning=FALSE, results='hide', fig.width=20, fig.height=20}
 
 # ------------------------------------------------------------------------------
 # Factor variables
@@ -3521,7 +3521,7 @@ print(plot_errors)
 ## 3.5 Preditiction uncertainty and stability
 The code below flags outliers based on both the GAM-based uncertainty estimate of Model 1 as well as the ensemble-based robustness measure described in the main paper. 
 
-```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 
 # The code below identifies statistically fragile valuations using two
 # complementary uncertainty measures:
@@ -3726,7 +3726,7 @@ saveRDS(plot_appraise, "saved_files/plot_appraise.rds")
 ### Distributional Assumptions
 The subsequent cell generates posterior predictive draws from Model 1 and compares their marginal sales-price distributions with the empirical distribution (see https://gavinsimpson.github.io/gratia/articles/posterior-simulation.html for details on posterior simulation with gratia).
 
-```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Posterior distribution, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 
 n_draws <- 10
 samples <-  posterior_samples(models_gam2$Model1, n = n_draws, seed = 123, mvn_method = "mgcv") %>%
@@ -3770,7 +3770,7 @@ print(plot_distribution)
 ### Concurvity Analysis
 The code investigates concurvity between the various smooths for Model 1 based on https://stat.ethz.ch/R-manual/R-devel/library/mgcv/html/concurvity.html. 
 
-```{r Concurvity analysis, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Concurvity analysis, eval=TRUE, echo=TRUE, warning=FALSE, results='hide', fig.width=20, fig.height=30}
 
 cc <- concurvity(models_gam2$Model1, full = FALSE)
 
