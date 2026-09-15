@@ -420,20 +420,13 @@ plot_grid(plots_combined, common_legend, ncol = 1, rel_heights = c(1, 0.05))
 
 ```
 
-
 ## 2.3 Variable transformation and imputation
 
-Prior to model fitting, categorical variables are converted to factors,
-missing values are imputed, and auxiliary variables required by the models are
-constructed. Continuous reference values are defined centrally and are
-subsequently used for model interpretation and, where applicable, imputation.
-This ensures that identical reference values are used throughout preprocessing,
-model specification, and valuation.
-
-Missing values are treated according to the following rules:
+Prior to the analyses, categorical variables are converted to factors and
+missing values are imputed according to the following rules:
 
 - year_rebuilt: Missing values and rebuilding years before 1970 are replaced
-  by the reference value 1970.
+  by 1970.
 
 - maximum_coverage_percentage: Missing values are imputed to 30%,
   corresponding to a typical allowed building coverage percentage in Denmark.
@@ -443,7 +436,7 @@ Missing values are treated according to the following rules:
 - Distance variables: Missing values are replaced by the maximum measurement
   threshold of the respective variable.
 
-The following auxiliary variables are additionally constructed:
+Additionally, the following auxiliary variables are constructed:
 
 - sales_date_numeric: A continuous decimal-year representation of the
   transaction date.
@@ -451,6 +444,16 @@ The following auxiliary variables are additionally constructed:
 - number_of_divisions: The lot size divided by the minimum subdivision size,
   rounded down to the nearest integer and bounded below by one.
 
+A set of reference values is furthermore defined for the continuous and
+categorical variables. These values are used to center the model specifications
+in the subsequent analyses. Where applicable, the reference values coincide
+with the corresponding imputation values. The remaining values are chosen to
+represent a typical single-family house on a typical lot.
+
+Finally, the dataset is separated into property sales, lot sales, and valuation
+properties. For the property and lot sales, the sale type is represented by
+both an unordered and an ordered factor for use in the subsequent model
+specifications.
 
 ```{r Variable conversion and imputation, results='hide'}
 
@@ -878,6 +881,7 @@ The code below extracts the spatial smooth for each model and plots it alongside
 
 # 1a) Predict once per model and store results
 prediction_results <- future_lapply(seq_along(models_gam2), function(i) {
+  
   model <- models_gam2[[i]]
   model_data <- model.frame(model)
   grid <- coordinate_grid
@@ -1189,7 +1193,6 @@ for (var in names(smooth_variables)) {
              linetype = "Model") +
 
         scale_color_brewer(palette = "Dark2", name = "Municipality type") +
-
         scale_fill_brewer(palette = "Dark2", name = "Municipality type")
 
 
@@ -1291,6 +1294,7 @@ theme(legend.position = "bottom",
       legend.title = element_text(size = 13, face = "bold"),
       legend.box = "horizontal",
       legend.justification = "center")
+
 ```
 
 
@@ -1508,14 +1512,11 @@ df_municipality_parametric <- factor_effect(model_parametric, "municipality")
 
 plot_factor_effect <- function(term_name) {
 
-  g2 <- df_factors_gam2 %>%
-        filter(term == term_name)
+  g2 <- df_factors_gam2 %>% filter(term == term_name)
 
-  g1 <- df_factors_gam1 %>%
-        filter(term == term_name)
+  g1 <- df_factors_gam1 %>% filter(term == term_name)
 
-  par <- df_factors_parametric %>%
-         filter(term == term_name)
+  par <- df_factors_parametric %>% filter(term == term_name)
 
   if (nrow(g2) == 0L) {return(NULL)}
 
@@ -1558,18 +1559,17 @@ plot_factor_effect <- function(term_name) {
                       linewidth = 0.4,
                       linetype = "dashed") +
 
-    # Confidence intervals for GAM2 Model 1
-    geom_errorbar(data = g2 %>% filter(Model == "Model 1"),
-                  aes(ymin = lower,
-                      ymax = upper),
-                  position = pos,
-                  width = errorbar_width,
-                  linewidth = errorbar_linewidth) +
+           # Confidence intervals for GAM2 Model 1
+           geom_errorbar(data = g2 %>% filter(Model == "Model 1"),
+                         aes(ymin = lower, ymax = upper),
+                         position = pos,
+                         width = errorbar_width,
+                         linewidth = errorbar_linewidth) +
 
-    # All four GAM2 models
-    geom_point(position = pos, size = point_size) +
-
-    scale_color_brewer(palette = "Dark2", name = "Municipality type")
+           # All four GAM2 models
+           geom_point(position = pos, size = point_size) +
+    
+           scale_color_brewer(palette = "Dark2", name = "Municipality type")
 
 
   # --------------------------------------------------------------------------
@@ -1620,12 +1620,9 @@ plot_factor_effect <- function(term_name) {
 
       scale_shape_manual(values = model_shapes, name = "Model") +
 
-      labs(x = NULL,
-           y = "Partial effect",
-           title = paste("Partial effect of", tolower(factor_variables[[term_name]]))) +
+      labs(x = NULL, y = "Partial effect", title = paste("Partial effect of", tolower(factor_variables[[term_name]]))) +
 
-      guides(color = guide_legend(order = 1),
-      shape = guide_legend(order = 2, override.aes = list(color = "black", size = point_size))) +
+      guides(color = guide_legend(order = 1), shape = guide_legend(order = 2, override.aes = list(color = "black", size = point_size))) +
 
       theme(axis.text.y = element_text(angle = 0, hjust = 1))
   
@@ -1649,24 +1646,17 @@ municipality_plot_data <- df_municipality_parametric %>%
 
 plot_municipality_parametric <- ggplot(municipality_plot_data, aes(x = municipality, y = effect)) +
 
-    geom_hline(yintercept = 0,
-               linewidth = 0.4,
-               linetype = "dashed") +
-
-    geom_point(color = "black",
-               shape = parametric_shape,
-               size = comparison_point_size,
-               stroke = 1) +
-
-    scale_x_discrete(labels = setNames(municipality_plot_data$municipality_label, municipality_plot_data$municipality)) +
-
-    coord_flip() +
-
-    labs(x = NULL,
-         y = "Partial effect",
-         title = "Partial effect of municipality") +
-
-    theme(axis.text.y = element_text(angle = 0, hjust = 1))
+                                geom_hline(yintercept = 0, linewidth = 0.4, linetype = "dashed") +
+                            
+                                geom_point(color = "black", shape = parametric_shape, size = comparison_point_size, stroke = 1) +
+                            
+                                scale_x_discrete(labels = setNames(municipality_plot_data$municipality_label, municipality_plot_data$municipality)) +
+                            
+                                coord_flip() +
+                            
+                                labs(x = NULL, y = "Partial effect", title = "Partial effect of municipality") +
+                            
+                                theme(axis.text.y = element_text(angle = 0, hjust = 1))
 
 
 # ==============================================================================
@@ -1690,11 +1680,10 @@ saveRDS(plot_factors, "saved_files/plot_factors.rds")
 
 
 # ------------------------------------------------------------------------------
-# Display standard factor plots
+# Display standard factor plots 
 # ------------------------------------------------------------------------------
 
-wrap_plots(plot_factors[names(plot_factors) != "municipality"],
-           ncol = 2) +
+wrap_plots(plot_factors, ncol = 2) +
 plot_layout(guides = "collect") &
 theme(legend.position = "bottom",
       legend.text = element_text(size = 12),
@@ -1704,13 +1693,6 @@ theme(legend.position = "bottom",
       legend.box = "horizontal",
       legend.justification = "center")
 
-
-# ------------------------------------------------------------------------------
-# Display municipality plot separately
-#
-# With 98 municipalities it is substantially taller than the other factor plots,
-# so displaying it separately is more readable.
-# ------------------------------------------------------------------------------
 
 
 ```
@@ -1857,9 +1839,7 @@ select_illustrative_property <- function(data,
     
   }
 
-
   candidates <- candidates %>% filter(!is.na(.data[[selection_variable]]))
-
 
   # --------------------------------------------------------------------------
   # Define the focal range using the NATIONWIDE distribution
@@ -1897,7 +1877,6 @@ select_illustrative_property <- function(data,
 
   continuous_variables <- setdiff(intersect(typical_continuous, names(reference_data)), selection_variable)
 
-
   continuous_distances <- matrix(0, nrow = nrow(focal_candidates), ncol = length(continuous_variables))
 
   colnames(continuous_distances) <- continuous_variables
@@ -1931,9 +1910,7 @@ select_illustrative_property <- function(data,
 
   categorical_variables <- intersect(typical_categorical, names(reference_data))
 
-
   categorical_score <- rep(0, nrow(focal_candidates))
-
 
   for (variable in categorical_variables) {
 
@@ -1954,13 +1931,11 @@ select_illustrative_property <- function(data,
   if (length(continuous_variables) > 0L) {
 
     max_continuous_distance <- apply(continuous_distances, 1, max)
-
     mean_continuous_distance <- rowMeans(continuous_distances)
 
   } else {
 
     max_continuous_distance <- rep(0, nrow(focal_candidates))
-
     mean_continuous_distance <- rep(0, nrow(focal_candidates))
   }
 
@@ -1983,22 +1958,21 @@ select_illustrative_property <- function(data,
 # 1d. Apply the selection
 # ------------------------------------------------------------------------------
 
-illustrative_properties <- illustrative_selection %>%
-                            pmap_dfr(function(property_label,
-                                              municipality_type,
-                                              selection_variable,
-                                              target_quantile,
-                                              description) {
+illustrative_properties <- illustrative_selection %>% 
+                           pmap_dfr(function(property_label, 
+                                             municipality_type, 
+                                             selection_variable, 
+                                             target_quantile, 
+                                             description) {
 
-                            select_illustrative_property(data = dataset_properties,
-                                                         municipality_type_value = municipality_type,
-                                                         selection_variable = selection_variable,
-                                                         target_quantile = target_quantile) %>%
-                              mutate(property_label = property_label,
-                                     example_description = description,
-                                     .before = 1)
-    }
-  )
+                                    select_illustrative_property(data = dataset_properties,
+                                                                 municipality_type_value = municipality_type,
+                                                                 selection_variable = selection_variable,
+                                                                 target_quantile = target_quantile) %>%
+                                    mutate(property_label = property_label,
+                                           example_description = description,
+                                           .before = 1)
+                                    })
 
 
 # ------------------------------------------------------------------------------
@@ -2134,61 +2108,61 @@ make_interpretation_results <- function(model,
     adjustment_heating_type = exp(sum_matching_terms(terms, "^heating_type$|^heating_type:municipality_type$|^municipality_type:heating_type$")))
 
 
-  # --------------------------------------------------------------------------
-  # Aggregate location and structural adjustments
-  # --------------------------------------------------------------------------
-
-  adjustments <- adjustments %>%
-                 mutate(adjustment_location =
-                        adjustment_coordinates *
-                        adjustment_coast_distance *
-                        adjustment_lake_distance *
-                        adjustment_stream_distance *
-                        adjustment_road_distance *
-                        adjustment_highway_distance *
-                        adjustment_train_station_distance *
-                        adjustment_railway_distance *
-                        adjustment_windturbine_distance *
-                        adjustment_ocean_view *
-                        adjustment_lake_view *
-                        adjustment_forest_size *
-                        adjustment_municipality_type,
-
-                        adjustment_structural =
-                        adjustment_year_built *
-                        adjustment_year_rebuilt *
-                        adjustment_living_space *
-                        adjustment_lot_size *
-                        adjustment_number_of_bathrooms *
-                        adjustment_house_type *
-                        adjustment_roof_type *
-                        adjustment_wall_type *
-                        adjustment_heating_type,
-
-                        adjustment_total = adjustment_location * adjustment_structural,
-
-                        predicted_price = standard_price * adjustment_sales_date * adjustment_total)
-
-
-  # --------------------------------------------------------------------------
-  # Direct prediction for verification
-  # --------------------------------------------------------------------------
-
-  direct_prediction <- as.vector(predict.gam(model, newdata = grid, type = "response"))
-
-
-  adjustments <- adjustments %>%
-                 mutate(direct_prediction = direct_prediction,
-                        prediction_difference = predicted_price - direct_prediction,
-                        relative_prediction_difference = prediction_difference / direct_prediction)
-
-
-  # --------------------------------------------------------------------------
-  # Output
-  # --------------------------------------------------------------------------
-
-  bind_cols(grid, adjustments) %>%
-  mutate(Model = model_name, .before = 1)
+    # --------------------------------------------------------------------------
+    # Aggregate location and structural adjustments
+    # --------------------------------------------------------------------------
+  
+    adjustments <- adjustments %>%
+                   mutate(adjustment_location =
+                          adjustment_coordinates *
+                          adjustment_coast_distance *
+                          adjustment_lake_distance *
+                          adjustment_stream_distance *
+                          adjustment_road_distance *
+                          adjustment_highway_distance *
+                          adjustment_train_station_distance *
+                          adjustment_railway_distance *
+                          adjustment_windturbine_distance *
+                          adjustment_ocean_view *
+                          adjustment_lake_view *
+                          adjustment_forest_size *
+                          adjustment_municipality_type,
+  
+                          adjustment_structural =
+                          adjustment_year_built *
+                          adjustment_year_rebuilt *
+                          adjustment_living_space *
+                          adjustment_lot_size *
+                          adjustment_number_of_bathrooms *
+                          adjustment_house_type *
+                          adjustment_roof_type *
+                          adjustment_wall_type *
+                          adjustment_heating_type,
+  
+                          adjustment_total = adjustment_location * adjustment_structural,
+  
+                          predicted_price = standard_price * adjustment_sales_date * adjustment_total)
+  
+  
+    # --------------------------------------------------------------------------
+    # Direct prediction for verification
+    # --------------------------------------------------------------------------
+  
+    direct_prediction <- as.vector(predict.gam(model, newdata = grid, type = "response"))
+  
+  
+    adjustments <- adjustments %>%
+                   mutate(direct_prediction = direct_prediction,
+                          prediction_difference = predicted_price - direct_prediction,
+                          relative_prediction_difference = prediction_difference / direct_prediction)
+  
+  
+    # --------------------------------------------------------------------------
+    # Output
+    # --------------------------------------------------------------------------
+  
+    bind_cols(grid, adjustments) %>%
+    mutate(Model = model_name, .before = 1)
   
 }
 
@@ -2199,16 +2173,12 @@ make_interpretation_results <- function(model,
 
 results_all_models <- bind_rows(
 
-  lapply(
-    names(models_gam2),
+  lapply(names(models_gam2),
 
     function(model_name) {
 
-      make_interpretation_results(
-        model = models_gam2[[model_name]],
-        model_name = model_name,
-        properties = illustrative_properties
-      )
+      make_interpretation_results(model = models_gam2[[model_name]], model_name = model_name, properties = illustrative_properties)
+      
     }
   )
 )
@@ -2219,19 +2189,8 @@ results_all_models <- bind_rows(
 # ------------------------------------------------------------------------------
 
 decomposition_check <- results_all_models %>%
-  summarise(
-    max_absolute_difference =
-      max(
-        abs(prediction_difference),
-        na.rm = TRUE
-      ),
-    max_relative_difference =
-      max(
-        abs(relative_prediction_difference),
-        na.rm = TRUE
-      )
-  )
-
+                       summarise(max_absolute_difference = max(abs(prediction_difference), na.rm = TRUE),
+                                 max_relative_difference = max(abs(relative_prediction_difference), na.rm = TRUE))
 
 print(decomposition_check)
 
@@ -2291,15 +2250,11 @@ illustrative_characteristics <- illustrative_properties %>%
 # columns = properties A--E
 
 illustrative_characteristics_table <- illustrative_characteristics %>%
-                                      pivot_longer(cols = -Property,
-                                                   names_to = "Characteristic",
-                                                   values_to = "Value") %>%
-                                      pivot_wider(names_from = Property,
-                                                  values_from = Value)
+                                      pivot_longer(cols = -Property, names_to = "Characteristic", values_to = "Value") %>%
+                                      pivot_wider(names_from = Property, values_from = Value)
 
 
 # LaTeX
-
 tbl_illustrative_characteristics_latex <- kable(illustrative_characteristics_table,
                                                 format = "latex",
                                                 booktabs = TRUE,
@@ -2307,12 +2262,10 @@ tbl_illustrative_characteristics_latex <- kable(illustrative_characteristics_tab
                                                 escape = FALSE,
                                                 caption = "Characteristics of the five illustrative valuation properties.",
                                                 label = "illustrative_property_characteristics") %>%
-  kable_styling(
-    full_width = FALSE,
-    position = "center",
-    latex_options = "hold_position",
-    font_size = 8
-  )
+                                          kable_styling(full_width = FALSE,
+                                                        position = "center",
+                                                        latex_options = "hold_position",
+                                                        font_size = 8)
 
 
 # ------------------------------------------------------------------------------
@@ -2320,135 +2273,107 @@ tbl_illustrative_characteristics_latex <- kable(illustrative_characteristics_tab
 # ------------------------------------------------------------------------------
 
 interpretation_decomposition <- results_all_models %>%
-  select(
-    Model,
-    property_label,
-
-    # Reference and time
-    standard_price,
-    adjustment_sales_date,
-
-    # Location adjustments
-    adjustment_municipality_type,
-    adjustment_coordinates,
-    adjustment_coast_distance,
-    adjustment_lake_distance,
-    adjustment_stream_distance,
-    adjustment_road_distance,
-    adjustment_highway_distance,
-    adjustment_train_station_distance,
-    adjustment_railway_distance,
-    adjustment_windturbine_distance,
-    adjustment_ocean_view,
-    adjustment_lake_view,
-    adjustment_forest_size,
-
-    # Structural adjustments
-    adjustment_year_built,
-    adjustment_year_rebuilt,
-    adjustment_living_space,
-    adjustment_lot_size,
-    adjustment_number_of_bathrooms,
-    adjustment_house_type,
-    adjustment_roof_type,
-    adjustment_wall_type,
-    adjustment_heating_type,
-
-    # Aggregate adjustments
-    adjustment_location,
-    adjustment_structural,
-    adjustment_total,
-    predicted_price
-  ) %>%
-  mutate(
-    Model = sub(
-      "^Model",
-      "Model ",
-      Model
-    ),
-    standard_price =
-      standard_price / 1e6,
-    predicted_price =
-      predicted_price / 1e6
-  ) %>%
-  arrange(
-    property_label,
-    Model
-  )
+                                select(Model,
+                                       property_label,
+                                       standard_price,
+                                       adjustment_sales_date,
+                                       adjustment_municipality_type,
+                                       adjustment_coordinates,
+                                       adjustment_coast_distance,
+                                       adjustment_lake_distance,
+                                       adjustment_stream_distance,
+                                       adjustment_road_distance,
+                                       adjustment_highway_distance,
+                                       adjustment_train_station_distance,
+                                       adjustment_railway_distance,
+                                       adjustment_windturbine_distance,
+                                       adjustment_ocean_view,
+                                       adjustment_lake_view,
+                                       adjustment_forest_size,
+                                       adjustment_year_built,
+                                       adjustment_year_rebuilt,
+                                       adjustment_living_space,
+                                       adjustment_lot_size,
+                                       adjustment_number_of_bathrooms,
+                                       adjustment_house_type,
+                                       adjustment_roof_type,
+                                       adjustment_wall_type,
+                                       adjustment_heating_type,
+                                       adjustment_location,
+                                       adjustment_structural,
+                                       adjustment_total,
+                                       predicted_price) %>%
+                                mutate(Model = sub("^Model", "Model ", Model),
+                                       standard_price = standard_price / 1e6,
+                                       predicted_price = predicted_price / 1e6) %>%
+                                arrange(property_label,
+                                        Model)
 
 
 # ------------------------------------------------------------------------------
 # 6c. Labels and ordering for decomposition tables
 # ------------------------------------------------------------------------------
 
-decomposition_variables <- c(
-  standard_price = "Reference value [million DKK]",
-  adjustment_sales_date = "Time",
-  adjustment_municipality_type = "Municipality type",
-  adjustment_coordinates = "Spatial",
-  adjustment_coast_distance = "Distance to coast",
-  adjustment_lake_distance = "Distance to lake",
-  adjustment_stream_distance = "Distance to stream",
-  adjustment_road_distance = "Distance to road",
-  adjustment_highway_distance = "Distance to highway",
-  adjustment_train_station_distance = "Distance to train station",
-  adjustment_railway_distance = "Distance to railway",
-  adjustment_windturbine_distance = "Distance to wind turbine",
-  adjustment_ocean_view = "Ocean view",
-  adjustment_lake_view = "Lake view",
-  adjustment_forest_size = "Forest size",
-  adjustment_year_built = "Year built",
-  adjustment_year_rebuilt = "Year rebuilt",
-  adjustment_living_space = "Living space",
-  adjustment_lot_size = "Lot size",
-  adjustment_number_of_bathrooms = "Number of bathrooms",
-  adjustment_house_type = "House type",
-  adjustment_roof_type = "Roof type",
-  adjustment_wall_type = "Wall type",
-  adjustment_heating_type = "Heating type",
-  adjustment_location = "Location adjustment",
-  adjustment_structural = "Structural adjustment",
-  adjustment_total = "Total adjustment",
-  predicted_price = "Valuation [million DKK]"
-)
+decomposition_variables <- c(standard_price = "Reference value [million DKK]",
+                             adjustment_sales_date = "Time",
+                             adjustment_municipality_type = "Municipality type",
+                             adjustment_coordinates = "Spatial",
+                             adjustment_coast_distance = "Distance to coast",
+                             adjustment_lake_distance = "Distance to lake",
+                             adjustment_stream_distance = "Distance to stream",
+                             adjustment_road_distance = "Distance to road",
+                             adjustment_highway_distance = "Distance to highway",
+                             adjustment_train_station_distance = "Distance to train station",
+                             adjustment_railway_distance = "Distance to railway",
+                             adjustment_windturbine_distance = "Distance to wind turbine",
+                             adjustment_ocean_view = "Ocean view",
+                             adjustment_lake_view = "Lake view",
+                             adjustment_forest_size = "Forest size",
+                             adjustment_year_built = "Year built",
+                             adjustment_year_rebuilt = "Year rebuilt",
+                             adjustment_living_space = "Living space",
+                             adjustment_lot_size = "Lot size",
+                             adjustment_number_of_bathrooms = "Number of bathrooms",
+                             adjustment_house_type = "House type",
+                             adjustment_roof_type = "Roof type",
+                             adjustment_wall_type = "Wall type",
+                             adjustment_heating_type = "Heating type",
+                             adjustment_location = "Location adjustment",
+                             adjustment_structural = "Structural adjustment",
+                             adjustment_total = "Total adjustment",
+                             predicted_price = "Valuation [million DKK]")
 
 
-location_variables <- c(
-  "adjustment_municipality_type",
-  "adjustment_coordinates",
-  "adjustment_coast_distance",
-  "adjustment_lake_distance",
-  "adjustment_stream_distance",
-  "adjustment_road_distance",
-  "adjustment_highway_distance",
-  "adjustment_train_station_distance",
-  "adjustment_railway_distance",
-  "adjustment_windturbine_distance",
-  "adjustment_ocean_view",
-  "adjustment_lake_view",
-  "adjustment_forest_size"
-)
+location_variables <- c("adjustment_municipality_type",
+                        "adjustment_coordinates",
+                        "adjustment_coast_distance",
+                        "adjustment_lake_distance",
+                        "adjustment_stream_distance",
+                        "adjustment_road_distance",
+                        "adjustment_highway_distance",
+                        "adjustment_train_station_distance",
+                        "adjustment_railway_distance",
+                        "adjustment_windturbine_distance",
+                        "adjustment_ocean_view",
+                        "adjustment_lake_view",
+                        "adjustment_forest_size")
 
 
-structural_variables <- c(
-  "adjustment_year_built",
-  "adjustment_year_rebuilt",
-  "adjustment_living_space",
-  "adjustment_lot_size",
-  "adjustment_number_of_bathrooms",
-  "adjustment_house_type",
-  "adjustment_roof_type",
-  "adjustment_wall_type",
-  "adjustment_heating_type"
-)
+structural_variables <- c("adjustment_year_built",
+                          "adjustment_year_rebuilt",
+                          "adjustment_living_space",
+                          "adjustment_lot_size",
+                          "adjustment_number_of_bathrooms",
+                          "adjustment_house_type",
+                          "adjustment_roof_type",
+                          "adjustment_wall_type",
+                          "adjustment_heating_type")
 
 
-aggregate_variables <- c(
-  "adjustment_location",
-  "adjustment_structural",
-  "adjustment_total",
-  "predicted_price"
-)
+aggregate_variables <- c("adjustment_location",
+                         "adjustment_structural",
+                         "adjustment_total",
+                         "predicted_price")
 
 
 # ------------------------------------------------------------------------------
@@ -2458,57 +2383,25 @@ aggregate_variables <- c(
 make_decomposition_table <- function(property) {
 
   property_data <- interpretation_decomposition %>%
-    filter(
-      property_label == property
-    ) %>%
-    select(
-      Model,
-      all_of(names(decomposition_variables))
-    ) %>%
-    pivot_longer(
-      cols = -Model,
-      names_to = "variable",
-      values_to = "value"
-    ) %>%
-    mutate(
-      variable = factor(
-        variable,
-        levels = names(decomposition_variables)
-      ),
-      Adjustment =
-        decomposition_variables[
-          as.character(variable)
-        ]
-    ) %>%
-    select(
-      Model,
-      variable,
-      Adjustment,
-      value
-    ) %>%
-    pivot_wider(
-      names_from = Model,
-      values_from = value
-    ) %>%
-    arrange(variable) %>%
-    select(-variable)
+                   filter(property_label == property) %>%
+                   select(Model, all_of(names(decomposition_variables))) %>%
+                   pivot_longer(cols = -Model, names_to = "variable", values_to = "value") %>%
+                   mutate(variable = factor(variable, levels = names(decomposition_variables)),
+                          Adjustment = decomposition_variables[as.character(variable)]) %>%
+                   select(Model, variable, Adjustment, value) %>%
+                   pivot_wider(names_from = Model, values_from = value) %>%
+                   arrange(variable) %>%
+                   select(-variable)
 
 
-  property_info <- illustrative_properties %>%
-    filter(
-      property_label == property
-    )
-
+  property_info <- illustrative_properties %>% filter(property_label == property)
   property_info <- property_info[1, ]
 
-
-  property_description <- paste0(
-    property,
-    ": ",
-    property_info$example_description,
-    " in ",
-    as.character(property_info$municipality)
-  )
+  property_description <- paste0(property,
+                                 ": ",
+                                 property_info$example_description,
+                                 " in ",
+                                 as.character(property_info$municipality))
 
 
   # Row positions:
@@ -2518,67 +2411,37 @@ make_decomposition_table <- function(property) {
   # 16--24 Structural effects
   # 25--28 Aggregate results
 
-  latex_table <- kable(
-    property_data,
-    format = "latex",
-    booktabs = TRUE,
-    linesep = "",
-    digits = 2,
-    escape = TRUE,
-    caption = paste0(
-      "Complete valuation decomposition for property ",
-      property,
-      " (",
-      property_info$example_description,
-      " in ",
-      as.character(property_info$municipality),
-      "). Individual model effects are multiplicative adjustments relative ",
-      "to the standardised reference property. Valuations are reported in ",
-      "million DKK. Displayed adjustment factors and monetary values are ",
-      "rounded independently."
-    ),
-    label = paste0(
-      "illustrative_decomposition_",
-      tolower(property)
-    )
-  ) %>%
-    kable_styling(
-      full_width = FALSE,
-      position = "center",
-      latex_options = "hold_position",
-      font_size = 8
-    ) %>%
-    pack_rows(
-      "Reference and valuation date",
-      1,
-      2,
-      bold = TRUE
-    ) %>%
-    pack_rows(
-      "Location adjustments",
-      3,
-      15,
-      bold = TRUE
-    ) %>%
-    pack_rows(
-      "Structural adjustments",
-      16,
-      24,
-      bold = TRUE
-    ) %>%
-    pack_rows(
-      "Aggregate adjustments and valuation",
-      25,
-      28,
-      bold = TRUE
-    )
+  latex_table <- kable(property_data,
+                       format = "latex",
+                       booktabs = TRUE,
+                       linesep = "",
+                       digits = 2,
+                       escape = TRUE,
+                       caption = paste0("Complete valuation decomposition for property ",
+                                        property,
+                                        " (",
+                                        property_info$example_description,
+                                        " in ",
+                                        as.character(property_info$municipality),
+                                        "). Individual model effects are multiplicative adjustments relative ",
+                                        "to the standardised reference property. Valuations are reported in ",
+                                        "million DKK. Displayed adjustment factors and monetary values are ",
+                                        "rounded independently."),
+                       label = paste0("illustrative_decomposition_", tolower(property))) %>%
+                       kable_styling(full_width = FALSE,
+                                     position = "center",
+                                     latex_options = "hold_position",
+                                     font_size = 8) %>%
+                       pack_rows("Reference and valuation date", 1, 2, bold = TRUE) %>%
+                       pack_rows("Location adjustments", 3, 15, bold = TRUE) %>%
+                       pack_rows("Structural adjustments", 16, 24, bold = TRUE) %>%
+                       pack_rows("Aggregate adjustments and valuation", 25, 28, bold = TRUE)
 
 
-  list(
-    data = property_data,
-    latex = latex_table,
-    description = property_description
-  )
+  list(data = property_data,
+       latex = latex_table,
+       description = property_description)
+  
 }
 
 
@@ -2586,56 +2449,38 @@ make_decomposition_table <- function(property) {
 # 6e. Generate decomposition tables A--E
 # ------------------------------------------------------------------------------
 
-decomposition_tables <- setNames(
-  lapply(
-    LETTERS[1:5],
-    make_decomposition_table
-  ),
-  LETTERS[1:5]
-)
-
+decomposition_tables <- setNames(lapply(LETTERS[1:5], make_decomposition_table), LETTERS[1:5])
 
 combined_illustrative_tables <- c(
 
   # Characteristics
-  as.character(
-    tbl_illustrative_characteristics_latex
-  ),
+  as.character(tbl_illustrative_characteristics_latex),
 
   "\\clearpage",
 
   # Property A
-  as.character(
-    decomposition_tables[["A"]]$latex
-  ),
+  as.character(decomposition_tables[["A"]]$latex),
 
   "\\clearpage",
 
   # Property B
-  as.character(
-    decomposition_tables[["B"]]$latex
-  ),
+  as.character(decomposition_tables[["B"]]$latex),
 
   "\\clearpage",
 
   # Property C
-  as.character(
-    decomposition_tables[["C"]]$latex
-  ),
+  as.character(decomposition_tables[["C"]]$latex),
 
   "\\clearpage",
 
   # Property D
-  as.character(
-    decomposition_tables[["D"]]$latex
-  ),
+  as.character(decomposition_tables[["D"]]$latex),
 
   "\\clearpage",
 
   # Property E
-  as.character(
-    decomposition_tables[["E"]]$latex
-  )
+  as.character(decomposition_tables[["E"]]$latex)
+  
 )
 
 
@@ -2644,27 +2489,15 @@ combined_illustrative_tables <- c(
 # ------------------------------------------------------------------------------
 
 plot_properties <- results_all_models %>%
-  filter(
-    Model == "Model1"
-  ) %>%
-  mutate(
-    valuation_million =
-      predicted_price / 1e6,
-
-    info_label = sprintf(
-      paste0(
-        "%s: %s in %s\n",
-        "Valuation: %.1f million DKK\n",
-        "Location: ×%.2f   Structural: ×%.2f"
-      ),
-      property_label,
-      example_description,
-      municipality,
-      valuation_million,
-      adjustment_location,
-      adjustment_structural
-    )
-  )
+                   filter(Model == "Model1") %>%
+                   mutate(valuation_million = predicted_price / 1e6,
+                          info_label = sprintf(paste0("%s: %s in %s\n", "Valuation: %.1f million DKK\n", "Location: ×%.2f   Structural: ×%.2f"),
+                          property_label,
+                          example_description,
+                          municipality,
+                          valuation_million,
+                          adjustment_location,
+                          adjustment_structural))
 
 
 # ------------------------------------------------------------------------------
@@ -2672,14 +2505,9 @@ plot_properties <- results_all_models %>%
 # ------------------------------------------------------------------------------
 
 reference_price <- results_all_models %>%
-  filter(
-    Model == "Model1"
-  ) %>%
-  summarise(
-    reference_price =
-      first(standard_price)
-  ) %>%
-  pull(reference_price)
+                   filter(Model == "Model1") %>%
+                   summarise(reference_price = first(standard_price)) %>%
+                   pull(reference_price)
 
 
 reference_point <- tibble(
@@ -2690,18 +2518,11 @@ reference_point <- tibble(
   property_label = "R",
   reference_price = reference_price,
   adjustment_location = 1,
-  adjustment_structural = 1
-) %>%
-  mutate(
-    info_label = sprintf(
-      paste0(
-        "R: Reference property\n",
-        "Reference value: %.2f million DKK\n",
-        "Location: ×1.00   Structural: ×1.00"
-      ),
-      reference_price / 1e6
-    )
-  )
+  adjustment_structural = 1) %>%
+  mutate(info_label = sprintf(paste0("R: Reference property\n",
+                                     "Reference value: %.2f million DKK\n",
+                                     "Location: ×1.00   Structural: ×1.00"),
+                                     reference_price / 1e6))
 
 
 # ------------------------------------------------------------------------------
@@ -2720,47 +2541,18 @@ box_positions <- tibble(
 
   property_label = LETTERS[1:5],
 
-  box_x = c(
-    355000,   # A
-    915000,   # B
-    355000,   # C
-    620000,   # D
-    355000    # E
-  ),
+  box_x = c(355000, 915000, 355000, 620000, 355000),
 
-  box_y = c(
-    6205000,  # A
-    6240000,  # B
-    6070000,  # C
-    6380000,  # D
-    6380000   # E
-  ),
+  box_y = c(6205000, 6240000, 6070000, 6380000, 6380000),
 
-  box_hjust = c(
-    0,
-    1,
-    0,
-    0,
-    0
-  )
-)
+  box_hjust = c(0, 1, 0, 0, 0))
 
 
-plot_properties <- plot_properties %>%
-  left_join(
-    box_positions,
-    by = "property_label"
-  )
+plot_properties <- plot_properties %>% left_join(box_positions, by = "property_label")
 
 
 # Reference box on the eastern side, below Gentofte
-reference_point <- reference_point %>%
-  mutate(
-    box_x = 915000,
-    box_y = 6070000,
-    box_hjust = 1
-  )
-
+reference_point <- reference_point %>% mutate(box_x = 915000, box_y = 6070000, box_hjust = 1)
 
 # ------------------------------------------------------------------------------
 # 10. Illustrative valuation figure
@@ -2773,173 +2565,102 @@ plot_illustrative_properties <- plot_spatial_smooths[[1]] +
   # Connector lines
   # --------------------------------------------------------------------------
 
-  geom_segment(
-    data = plot_properties,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north,
-      xend = box_x,
-      yend = box_y
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    linewidth = 0.45
-  ) +
+  geom_segment(data = plot_properties,
+               aes(x = coordinate_east, y = coordinate_north, xend = box_x, yend = box_y),
+               inherit.aes = FALSE,
+               color = "black",
+               linewidth = 0.45) +
 
-  geom_segment(
-    data = reference_point,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north,
-      xend = box_x,
-      yend = box_y
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    linewidth = 0.45
-  ) +
+  geom_segment(data = reference_point,
+               aes(x = coordinate_east, y = coordinate_north, xend = box_x, yend = box_y),
+               inherit.aes = FALSE,
+               color = "black",
+               linewidth = 0.45) +
 
 
   # --------------------------------------------------------------------------
   # Property markers A--E
   # --------------------------------------------------------------------------
 
-  geom_point(
-    data = plot_properties,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north
-    ),
-    inherit.aes = FALSE,
-    shape = 21,
-    fill = "white",
-    color = "black",
-    size = 6.5,
-    stroke = 1
-  ) +
+  geom_point(data = plot_properties,
+             aes(x = coordinate_east, y = coordinate_north),
+             inherit.aes = FALSE,
+             shape = 21,
+             fill = "white",
+             color = "black",
+             size = 6.5,
+             stroke = 1) +
 
-  geom_text(
-    data = plot_properties,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north,
-      label = property_label
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    size = 4.5,
-    fontface = "bold"
-  ) +
+  geom_text(data = plot_properties,
+            aes(x = coordinate_east, y = coordinate_north, label = property_label),
+            inherit.aes = FALSE,
+            color = "black",
+            size = 4.5,
+            fontface = "bold") +
 
 
   # --------------------------------------------------------------------------
   # Reference marker R
   # --------------------------------------------------------------------------
 
-  geom_point(
-    data = reference_point,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north
-    ),
-    inherit.aes = FALSE,
-    shape = 22,
-    fill = "white",
-    color = "black",
-    size = 6.5,
-    stroke = 1
-  ) +
+  geom_point(data = reference_point,
+             aes(x = coordinate_east, y = coordinate_north),
+             inherit.aes = FALSE,
+             shape = 22,
+             fill = "white",
+             color = "black",
+             size = 6.5,
+             stroke = 1) +
 
-  geom_text(
-    data = reference_point,
-    aes(
-      x = coordinate_east,
-      y = coordinate_north,
-      label = property_label
-    ),
-    inherit.aes = FALSE,
-    color = "black",
-    size = 4.3,
-    fontface = "bold"
-  ) +
+  geom_text(data = reference_point,
+            aes(x = coordinate_east, y = coordinate_north, label = property_label),
+            inherit.aes = FALSE,
+            color = "black",
+            size = 4.3,
+            fontface = "bold") +
 
 
   # --------------------------------------------------------------------------
   # Property information boxes
   # --------------------------------------------------------------------------
 
-  geom_label(
-    data = plot_properties,
-    aes(
-      x = box_x,
-      y = box_y,
-      label = info_label,
-      hjust = box_hjust
-    ),
-    inherit.aes = FALSE,
-    vjust = 0.5,
-    size = 3.35,
-    lineheight = 1.15,
-    fill = "white",
-    color = "black",
-    linewidth = 0.4,
-    label.padding = unit(
-      0.30,
-      "lines"
-    )
-  ) +
-
+  geom_label(data = plot_properties,
+             aes(x = box_x, y = box_y, label = info_label, hjust = box_hjust),
+             inherit.aes = FALSE,
+             vjust = 0.5,
+             size = 3.35,
+             lineheight = 1.15,
+             fill = "white",
+             color = "black",
+             linewidth = 0.4,
+             label.padding = unit(0.30, "lines")) +
+          
 
   # --------------------------------------------------------------------------
   # Reference information box
   # --------------------------------------------------------------------------
 
-  geom_label(
-    data = reference_point,
-    aes(
-      x = box_x,
-      y = box_y,
-      label = info_label,
-      hjust = box_hjust
-    ),
-    inherit.aes = FALSE,
-    vjust = 0.5,
-    size = 3.35,
-    lineheight = 1.15,
-    fill = "white",
-    color = "black",
-    linewidth = 0.4,
-    label.padding = unit(
-      0.30,
-      "lines"
-    )
-  ) +
+  geom_label(data = reference_point,
+             aes(x = box_x, y = box_y, label = info_label, hjust = box_hjust),
+             inherit.aes = FALSE,
+             vjust = 0.5,
+             size = 3.35,
+             lineheight = 1.15,
+             fill = "white",
+             color = "black",
+             linewidth = 0.4,
+             label.padding = unit(0.30, "lines")) +
 
 
   # --------------------------------------------------------------------------
   # Figure extent
   # --------------------------------------------------------------------------
 
-  coord_fixed(
-    xlim = c(
-      330000,
-      940000
-    ),
-    ylim = c(
-      6020000,
-      6440000
-    ),
-    clip = "off"
-  ) +
+  coord_fixed(xlim = c(330000, 940000),
+              ylim = c(6020000, 6440000),
+              clip = "off") +
 
-  theme(
-    plot.margin = margin(
-      t = 10,
-      r = 15,
-      b = 10,
-      l = 15
-    )
-  )
+  theme(plot.margin = margin(t = 10, r = 15, b = 10, l = 15))
 
 
 plot_illustrative_properties
