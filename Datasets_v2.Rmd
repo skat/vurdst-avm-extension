@@ -90,7 +90,7 @@ Finally, standard single-family house properties, standard single-family house s
 #Only observations with exactly one valuation property, one land parcel, one unit, and one building
 ejendomssalg <- ejendomssalg %>%
                 add_count(vurderingsejendom_id_ice, df_virkningstid, name = "n_vurd") %>%
-                add_count(delgrund.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
+                add_count(delgrund_info.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
                 add_count(enhed.enhed_id_ice, df_virkningstid, name = "n_enhed") %>%
                 add_count(bygning.bygning_id_ice, df_virkningstid, name = "n_bygning") %>%
                 filter(n_vurd == 1, n_delgrund == 1, n_enhed == 1, n_bygning == 1) %>%
@@ -98,7 +98,7 @@ ejendomssalg <- ejendomssalg %>%
 
 vurderingsejendomme <- vurderingsejendomme %>%
                        add_count(vurderingsejendom_id_ice, df_virkningstid, name = "n_vurd") %>%
-                       add_count(delgrund.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
+                       add_count(delgrund_info.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
                        add_count(enhed.enhed_id_ice, df_virkningstid, name = "n_enhed") %>%
                        add_count(bygning.bygning_id_ice, df_virkningstid, name = "n_bygning") %>%
                        filter(n_vurd == 1, n_delgrund == 1, n_enhed == 1, n_bygning == 1) %>%
@@ -106,37 +106,36 @@ vurderingsejendomme <- vurderingsejendomme %>%
 
 grundsalg <- grundsalg %>%
              add_count(vurderingsejendom_id_ice, df_virkningstid, name = "n_vurd") %>%
-             add_count(delgrund.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
+             add_count(delgrund_info.delgrund_ids, df_virkningstid, name = "n_delgrund") %>%
              filter(n_vurd == 1, n_delgrund == 1) %>%
              select(-n_vurd, -n_delgrund)
 
 
 #Remove bulk sales
 ejendomssalg <- ejendomssalg %>%
-                group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, vurinfo.kommunenummer) %>%
+                group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, kommunenummer) %>%
                 filter(n() == 1) %>%
                 ungroup()
 
 grundsalg <- grundsalg %>%
-             group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, vurinfo.kommunenummer) %>%
+             group_by(salg.koebsdato, salg.anmeldelseidentifikator, salg.ialtkoebesum, kommunenummer) %>%
              filter(n() == 1) %>%
              ungroup()
 
 
 ## Unfold information about each deljordstykke
-ejendomssalg <- unpack_element(ejendomssalg, "delgrund.deljordstykke")
+ejendomssalg <- unpack_element(ejendomssalg, "deljordstykke")
 
-vurderingsejendomme <- unpack_element(vurderingsejendomme, "delgrund.deljordstykke")
+vurderingsejendomme <- unpack_element(vurderingsejendomme, "deljordstykke")
 
-grundsalg <- unpack_element(grundsalg, "delgrund.deljordstykke")
+grundsalg <- unpack_element(grundsalg, "deljordstykke")
 
 
 ## Unfold planning information
-ejendomssalg <- unpack_element(ejendomssalg, "deljordstykke.plandata", names_sep = "_")
-
-vurderingsejendomme <- unpack_element(vurderingsejendomme, "deljordstykke.plandata", names_sep = "_")
-
-grundsalg <- unpack_element(grundsalg, "deljordstykke.plandata", names_sep = "_")
+#HVAD SKAL DER SKE HER??
+#ejendomssalg <- unpack_element(ejendomssalg, "deljordstykke.plandata", names_sep = "_")
+#vurderingsejendomme <- unpack_element(vurderingsejendomme, "deljordstykke.plandata", names_sep = "_")
+#grundsalg <- unpack_element(grundsalg, "deljordstykke.plandata", names_sep = "_")
 
 #Standard single family houses
 ejendomssalg_pcl <- ejendomssalg %>%
@@ -148,10 +147,10 @@ ejendomssalg_pcl <- ejendomssalg %>%
                            salg.ejendomkategori == "EjendomKategoriEnfamiliesejendom",
                            !salg.flereejendommeindikator,
                            is.na(salg.bygningsforholdkode),
-                           vurinfo.vurbenyttelseskode == "01", #Standard beboelse
-                           vurinfo.antal_sfer == 1,
-                           vurinfo.antal_bfer == 1,
-                           is.na(bygning.ejerforholdskode), 
+                           vurbenyttelseskode == "01", #Standard beboelse
+                           ice_info.antal_sfe == 1,
+                           ice_info.antal_bfe == 1,
+                           is.na(bygning.ejendommensejerforholdskode), 
                            bygning.samlet_erhvervsareal == 0,
                            enhed.areal_til_erhverv == 0,
                            enhed.antal_vaerelser_til_erhverv == 0,
@@ -160,25 +159,23 @@ ejendomssalg_pcl <- ejendomssalg %>%
                            enhed.toiletforhold == "T",
                            enhed.badeforhold == "V",
                            enhed.koekkenforhold == "E",
-                           delgrund.enheder_per_delgrund == 1,
-                           delgrund.jordstykker_per_delgrund == 1,
-                           delgrund.deljordstykker_per_delgrund == 1,
-                           delgrund.beskyttelseslinier_andel == 0,
-                           deljordstykke.areal_beskyttet == 0,
-                           deljordstykke.andel_beskyttet == 0,
-                           delgrund.samlet_sommerhuszoneareal == 0,
-                           delgrund.samlet_udenzoneareal == 0,
-                           deljordstykke.generelanvendelseskategori == 11,
+                           ice_info.js_per_delgrund == 1,
+                           ice_info.beskyttelseslinier_andel == 0,
+                           ice_info.deljordstykke_areal_beskyttet == 0,
+                           ice_info.deljordstykke_andel_beskyttet == 0,
+                           ice_info.sommerhuszoneareal_opsummeret_delj == 0,
+                           ice_info.udenzoneareal_opsummeret_delj == 0,
+                           generelanvendelseskategori == 11,
                            deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1100", "1110", "1120"))
 
 vurderingsejendomme_pcl <- vurderingsejendomme %>%
                            filter(bygning.bygningsanvendelse %in% c(120,121,122,130,131,132),
                                   enhed.enhedsanvendelse %in% c(120,121,122,130,131,132),
                                   enhed.areal_til_beboelse == bygning.samlet_boligareal,
-                                  vurinfo.vurbenyttelseskode == "01", #Standard beboelse
-                                  vurinfo.antal_sfer == 1,
-                                  vurinfo.antal_bfer == 1,
-                                  is.na(bygning.ejerforholdskode), 
+                                  vurbenyttelseskode == "01", #Standard beboelse
+                                  ice_info.antal_sfe == 1,
+                                  ice_info.antal_bfe == 1,
+                                  is.na(bygning.ejendommensejerforholdskode), 
                                   bygning.samlet_erhvervsareal == 0,
                                   enhed.areal_til_erhverv == 0,
                                   enhed.antal_vaerelser_til_erhverv == 0,
@@ -187,34 +184,30 @@ vurderingsejendomme_pcl <- vurderingsejendomme %>%
                                   enhed.toiletforhold == "T",
                                   enhed.badeforhold == "V",
                                   enhed.koekkenforhold == "E",
-                                  delgrund.enheder_per_delgrund == 1,
-                                  delgrund.jordstykker_per_delgrund == 1,
-                                  delgrund.deljordstykker_per_delgrund == 1,
-                                  delgrund.beskyttelseslinier_andel == 0,
-                                  deljordstykke.areal_beskyttet == 0,
-                                  deljordstykke.andel_beskyttet == 0,
-                                  delgrund.samlet_sommerhuszoneareal == 0,
-                                  delgrund.samlet_udenzoneareal == 0,
-                                  deljordstykke.generelanvendelseskategori == 11,
+                                  ice_info.js_per_delgrund == 1,
+                                  ice_info.beskyttelseslinier_andel == 0,
+                                  ice_info.deljordstykke_areal_beskyttet == 0,
+                                  ice_info.deljordstykke_andel_beskyttet == 0,
+                                  ice_info.sommerhuszoneareal_opsummeret_delj == 0,
+                                  ice_info.udenzoneareal_opsummeret_delj == 0,
+                                  generelanvendelseskategori == 11,
                                   deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1100", "1110", "1120"))
 
 grundsalg_pcl <- grundsalg %>%
                  filter(salg.ejendomkategori == "EjendomKategoriUbebyggetgrund",
                         !salg.flereejendommeindikator,
                         is.na(salg.bygningsforholdkode),
-                        vurinfo.vurbenyttelseskode == "09", #Ubebygget areal
-                        vurinfo.antal_sfer == 1,
-                        vurinfo.antal_bfer == 1,
-                        delgrund.enheder_per_delgrund == 0,
-                        delgrund.jordstykker_per_delgrund == 1,
-                        delgrund.deljordstykker_per_delgrund == 1,
-                        delgrund.beskyttelseslinier_andel == 0,
-                        lengths(delgrund.alle_bygninger_paa_delgrunden) == 0,
-                        deljordstykke.areal_beskyttet == 0,
-                        deljordstykke.andel_beskyttet == 0,
-                        delgrund.samlet_sommerhuszoneareal == 0,
-                        delgrund.samlet_udenzoneareal == 0,
-                        deljordstykke.generelanvendelseskategori == 11,
+                        vurbenyttelseskode == "09", #Ubebygget areal
+                        ice_info.antal_sfe == 1,
+                        ice_info.antal_bfe == 1,
+                        ice_info.js_per_delgrund == 1,
+                        ice_info.beskyttelseslinier_andel == 0,
+                        lengths(ice_info.alle_bygninger_paa_delgrunden) == 0,
+                        ice_info.deljordstykke_areal_beskyttet == 0,
+                        ice_info.deljordstykke_andel_beskyttet == 0,
+                        ice_info.sommerhuszoneareal_opsummeret_delj == 0,
+                        ice_info.udenzoneareal_opsummeret_delj == 0,
+                        generelanvendelseskategori == 11,
                         deljordstykke.plandata_plandata.specifikanvendelseskategori %in% c("1100", "1110", "1120"))
 
 ```
@@ -235,14 +228,14 @@ Finally, because the unfolding of planning data can create multiple rows per pro
 
 #Fjen NA'er for forskellige variable
 ejendomssalg_pcl <- ejendomssalg_pcl %>%
-                    filter(!is.na(vurinfo.adresse.koordinatoest),
-                           !is.na(vurinfo.adresse.koordinatnord),
+                    filter(!is.na(adresse.koordinatoest),
+                           !is.na(adresse.koordinatnord),
                            !is.na(salg.koebsdato),
                            !is.na(bygning.opfoerelsesaar),
                            !is.na(bygning.omtilbygningsaar),
                            !is.na(enhed.areal_til_beboelse),
                            !is.na(delgrund.registeret_areal_uden_vej),
-                           !is.na(delgrund.zone),
+                           !is.na(ice_info.zone),
                            !is.na(salg.ialtkoebesum),
                            !is.na(bygning.tagdaekningsmateriale),
                            !is.na(bygning.varmeinstallation),
@@ -252,13 +245,13 @@ ejendomssalg_pcl <- ejendomssalg_pcl %>%
                            !is.na(vurinfo.areal_samlet_skov))
 
 vurderingsejendomme_pcl  <- vurderingsejendomme_pcl  %>%
-                            filter(!is.na(vurinfo.adresse.koordinatoest),
-                                   !is.na(vurinfo.adresse.koordinatnord),
+                            filter(!is.na(adresse.koordinatoest),
+                                   !is.na(adresse.koordinatnord),
                                    !is.na(bygning.opfoerelsesaar),
                                    !is.na(bygning.omtilbygningsaar),
                                    !is.na(enhed.areal_til_beboelse),
                                    !is.na(delgrund.registeret_areal_uden_vej),
-                                   !is.na(delgrund.zone),
+                                   !is.na(ice_info.zone),
                                    !is.na(bygning.tagdaekningsmateriale),
                                    !is.na(bygning.varmeinstallation),
                                    !is.na(bygning.ydervaeggensmateriale),
@@ -266,11 +259,11 @@ vurderingsejendomme_pcl  <- vurderingsejendomme_pcl  %>%
                                    !is.na(vurinfo.udsigtslaengde_soe),
                                    !is.na(vurinfo.areal_samlet_skov))
 
-grundsalg_pcl <- grundsalg_pcl %>% filter(!is.na(vurinfo.adresse.koordinatoest),
-                                          !is.na(vurinfo.adresse.koordinatnord),
+grundsalg_pcl <- grundsalg_pcl %>% filter(!is.na(adresse.koordinatoest),
+                                          !is.na(adresse.koordinatnord),
                                           !is.na(salg.koebsdato),
                                           !is.na(vurinfo.registreretareal_fratrukket_vejareal),
-                                          !is.na(delgrund.zone),
+                                          !is.na(ice_info.zone),
                                           !is.na(salg.ialtkoebesum),
                                           !is.na(vurinfo.udsigtslaengde_hav),
                                           !is.na(vurinfo.udsigtslaengde_soe),
