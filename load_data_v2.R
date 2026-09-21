@@ -348,6 +348,9 @@ process_vurderingsejendomme_chunk <- function(file) {
              select(vurinfo) %>%
              unpack_element("vurinfo")
 
+  vurinfo[["adresse.koordinatnord"]] <- vurinfo$adresse$etrs89koordinatnord
+  vurinfo[["adresse.koordinatoest"]] <- vurinfo$adresse$etrs89koordinatoest
+
   # The original nested object is no longer needed
   rm(vurderingsdata)
   gc()
