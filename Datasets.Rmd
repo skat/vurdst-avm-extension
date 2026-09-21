@@ -125,17 +125,13 @@ grundsalg <- grundsalg %>%
 
 ## Unfold information about each deljordstykke
 ejendomssalg <- unpack_element(ejendomssalg, "delgrund.deljordstykke")
-
 vurderingsejendomme <- unpack_element(vurderingsejendomme, "delgrund.deljordstykke")
-
 grundsalg <- unpack_element(grundsalg, "delgrund.deljordstykke")
 
 
 ## Unfold planning information
 ejendomssalg <- unpack_element(ejendomssalg, "deljordstykke.plandata", names_sep = "_")
-
 vurderingsejendomme <- unpack_element(vurderingsejendomme, "deljordstykke.plandata", names_sep = "_")
-
 grundsalg <- unpack_element(grundsalg, "deljordstykke.plandata", names_sep = "_")
 
 #Standard single family houses
