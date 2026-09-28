@@ -1716,7 +1716,7 @@ The code below performs valuations using the fitted models of a set of chosen ex
 # For each example, candidate properties are first restricted to a moderately
 # extreme range of the characteristic being illustrated. Among these
 # candidates, a property is selected whose remaining structural characteristics
-# are as typical as possible within the relevant geographical subset.
+# are as typical as possible relative to the nationwide property population.
 #
 # Categorical characteristics are compared with their modes. Continuous
 # structural characteristics are compared with their medians after scaling by
@@ -3229,20 +3229,25 @@ print(plot_errors)
 ```
 
 
-## 3.5 Preditiction uncertainty and stability
+## 3.5 Estimation uncertainty and estimation-sample sensitivity
 The code below flags outliers based on both the GAM-based uncertainty estimate of Model 1 as well as the ensemble-based robustness measure described in the main paper. 
 
 ```{r Uncertainty detection, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
 
 # The code below identifies statistically fragile valuations using two
-# complementary uncertainty measures:
+# complementary measures:
 #
-#   sigma_Model1   : prediction uncertainty from Model 1
-#   sigma_Ensemble : variation in predictions across the four fitted models
+#   sigma_Model1   : model-based standard error of the estimated linear
+#                    predictor from Model 1
+#   sigma_Ensemble : standard deviation of the fitted linear predictors
+#                    across the four cross-validation models
+#
+# sigma_Model1 measures conditional model-based estimation uncertainty,
+# whereas sigma_Ensemble measures sensitivity to perturbations of the
+# estimation sample. Neither measure represents full predictive uncertainty.
 #
 # A valuation is flagged when either measure exceeds the specified threshold,
 # corresponding to the max-rule described in the main paper.
-
 
 # ------------------------------------------------------------------------------
 # 1. Predictions and Model 1 uncertainty
@@ -3842,21 +3847,21 @@ print(plot_basis)
 ### 4.1 Standard-house construction
 In the code below, lot sales and properties are augmented with a fictitious single-family house corresponding to a set of standard building characteristics. Their standardized property value is subsequently calculated. 
 
-```{r Standardization, eval=FALSE, echo=TRUE, warning=FALSE, results= 'hide'}
+```{r Standardization, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
-standardize_property <- function(data, reference_data) {
+standardize_property <- function(data) {
   
-    data %>% mutate(year_built = 1970,
-                    year_rebuilt = 1970,
-                    living_space = 140,
-                    lot_size = 800,
-                    maximum_coverage_percentage = 30,
-                    number_of_divisions = 1,
-                    number_of_bathrooms = 1,
-                    house_type = factor("Detached", levels = levels(factor(reference_data$house_type))),
-                    roof_type = factor("Fiber cement", levels = levels(factor(reference_data$roof_type))),
-                    wall_type = factor("Brick", levels = levels(factor(reference_data$wall_type))),
-                    heating_type = factor("District heating", levels = levels(factor(reference_data$heating_type))))
+    data %>% mutate(year_built = reference_values[["year_built"]],
+                    year_rebuilt = reference_values[["year_rebuilt"]],
+                    living_space = reference_values[["living_space"]],
+                    lot_size = reference_values[["lot_size"]],
+                    maximum_coverage_percentage = reference_values[["maximum_coverage_percentage"]],
+                    subdivision_size = reference_values[["subdivision_size"]],
+                    number_of_bathrooms = reference_values[["number_of_bathrooms"]],
+                    house_type = factor(factor_references[["house_type"]], levels = levels(data$house_type)),
+                    roof_type = factor(factor_references[["roof_type"]], levels = levels(data$roof_type)),
+                    wall_type = factor(factor_references[["wall_type"]], levels = levels(data$wall_type)),
+                    heating_type = factor(factor_references[["heating_type"]], levels = levels(data$heating_type)))
   }
 
 
@@ -3870,16 +3875,16 @@ if (load) {
 } else {
   
   #standardize 
-  dataset_lot_sales_cv_standardized <- standardize_property(dataset_lot_sales_cv, reference_data = dataset)
-  dataset_properties_standardized <- standardize_property(dataset_properties, reference_data = dataset)
+  dataset_lot_sales_cv_standardized <- standardize_property(dataset_lot_sales_cv)
+  dataset_properties_standardized <- standardize_property(dataset_properties)
   
   #calculate standarized prices for each model 
-  for (model_name in names(models)) {
+  for (model_name in names(models_gam2)) {
     
-    dataset_lot_sales_cv_standardized[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
-    dataset_properties_standardized[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties_standardized, type = "response"))
-    dataset_properties[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties_standardized, type = "response"))
-    dataset_properties[[paste0("property_value_", model_name)]] <- as.vector(predict.gam(models[[model_name]], dataset_properties, type = "response"))
+    dataset_lot_sales_cv_standardized[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models_gam2[[model_name]], dataset_lot_sales_cv_standardized, type = "response"))
+    dataset_properties_standardized[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models_gam2[[model_name]], dataset_properties_standardized, type = "response"))
+    dataset_properties[[paste0("standard_property_value_", model_name)]] <- as.vector(predict.gam(models_gam2[[model_name]], dataset_properties_standardized, type = "response"))
+    dataset_properties[[paste0("property_value_", model_name)]] <- as.vector(predict.gam(models_gam2[[model_name]], dataset_properties, type = "response"))
   
   }
   
@@ -3902,7 +3907,7 @@ if (load) {
 ### 4.2 Model specifications and fitting
 The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data. To isolate model sensitivity to changes in the training population, each model was fitted using the complete training sample (chunk.size = nrow(training_subset)). Using a single chunk reduces this source of numerical variation, making differences across cross-validation folds more directly interpretable as sensitivity to training-data perturbations (see https://stats.stackexchange.com/questions/659490/reproducibility-of-bam-mgcv-algorithm).
 
-```{r Lot-value models, eval=FALSE, echo=TRUE, warning=FALSE, results= 'hide'}
+```{r Lot-value models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
 
 if (load) {
   
@@ -4117,9 +4122,7 @@ if (load) {
   # -------------------------
   
   saveRDS(models_direct, "saved_files/models_direct.rds")
-  
   saveRDS(models_standard_property, "saved_files/models_standard_property.rds")
-  
   saveRDS(models_combined, "saved_files/models_combined.rds")
   
 }
@@ -4131,7 +4134,7 @@ if (load) {
 #### Spatial smooths 
 The code below extracts and visualizes the spatial smooths from each of the three lot-value model ensembles. For every fold-specific model, the estimated spatial effect and its standard error are evaluated on a common coordinate grid covering Denmark. For the combined model, both the shared spatial surface and the sale-type-specific spatial adjustment are extracted.
 
-```{r Spatial smooths lot models, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Spatial smooths lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 # -------------------------------
 # Helper 1: complete prediction grid
@@ -4419,7 +4422,7 @@ wrap_plots(plots_spatial_combined_filtered, ncol = 3)
 #### Other smooth effects 
 The code below extracts and plots the remaining smooth effects for each type of lot model. A smooth corresponding to each trained model is plotted, but for readability confidence intervals are only displayed for Model 1. 
 
-```{r Other smooth effects lot models, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide'}
+```{r Other smooth effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide'}
 
 # -------------------------
 # 1. Smooth variables
@@ -4630,7 +4633,7 @@ wrap_plots(plot_smooths_standard_property, ncol = 2)
 ```
 
 
-```{r Plot smooths direct and combined, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Plot smooths direct and combined, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 wrap_plots(plot_smooths_direct, ncol = 2)
 wrap_plots(plot_smooths_combined, ncol = 2)
 ```
@@ -4638,7 +4641,7 @@ wrap_plots(plot_smooths_combined, ncol = 2)
 #### Factor effects
 The code below extracts and plots the factor effects for the combined model. A point is shown for the effect of each model but error bars are shown only for Model 1. 
 
-```{r Factor effects lot models, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
+```{r Factor effects lot models, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=20}
 
 factor_variables <- c(house_type = "House type",
                       municipality_type = "Municipality type",
@@ -4777,7 +4780,7 @@ wrap_plots(plot_factors, ncol = 2) +
 ## 4.4 Predictive performance
 The code below extracts various residual types for each type of lot model and calculates different performance measures for the training and validation set. Note that using N-fold cross-validation means that there are N-1 estimates for each training point, and the training error is simply taken as the average over these. 
 
-```{r Performance lot sales, eval=FALSE, echo=TRUE, warning=FALSE}
+```{r Performance lot sales, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # 1. Residuals for lot-sales evaluation
@@ -5050,7 +5053,7 @@ print(plot_errors_lot_models)
 ## 4.5 Prediction stability
 The code below evaluates the stability of predicted lot values across the fold-specific models for each of the three modelling approaches. All models within an ensemble are used to predict lot values for the same set of properties on the link scale. For each property, the mean prediction and the standard deviation across the fold-specific predictions are calculated. The standard deviation across the model ensembles is used as a measure of sensitivity to perturbations of the training data.
 
-```{r Stability lot models, eval=FALSE, echo=TRUE, warning=FALSE}
+```{r Stability lot models, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # 1. Settings
@@ -5223,7 +5226,7 @@ The code below decomposes predicted property values into estimated lot and build
 
 Building value is defined as the difference between the predicted property value and predicted lot value. The same decomposition is also calculated for the standardized property. The resulting values are summarized using measures of central tendency, dispersion, selected quantiles, building shares, values per square metre, and the frequency of negative building-value estimates.
 
-```{r Property, building and lot values, eval=FALSE, echo=TRUE, warning=FALSE}
+```{r Property, building and lot values, eval=TRUE, echo=TRUE, warning=FALSE}
 
 # -------------------------
 # Property, lot and building value decomposition
