@@ -3905,228 +3905,230 @@ if (load) {
 
 
 ### 4.2 Model specifications and fitting
-The code below fits three alternative GAM approaches for estimating lot values. The direct lot model is trained exclusively on lot sales using location, time, lot characteristics, and surrounding amenities. The standard-property model relates lot-sale prices to the predicted value of a standardized property, while additionally controlling for selected lot and spatial characteristics. The combined model is fitted jointly to property sales and lot sales and distinguishes the two sale types through a type effect and a type-specific spatial adjustment. For each approach, one model is fitted per cross-validation fold using the remaining $K-1$ folds as the training data. To isolate model sensitivity to changes in the training population, each model was fitted using the complete training sample (chunk.size = nrow(training_subset)). Using a single chunk reduces this source of numerical variation, making differences across cross-validation folds more directly interpretable as sensitivity to training-data perturbations (see https://stats.stackexchange.com/questions/659490/reproducibility-of-bam-mgcv-algorithm).
 
-```{r Lot-value models, eval=TRUE, echo=TRUE, warning=FALSE, results= 'hide'}
+Three alternative GAM approaches are estimated for predicting lot values. The
+first is a direct lot model estimated exclusively from lot sales using
+locational, temporal, lot, and environmental characteristics. The second is a
+standard-property model in which the predicted value of a standardized
+single-family property is used as a predictor of lot value, together with
+selected lot and spatial characteristics. Since the standardized property
+values are obtained from the fold-specific property models, the corresponding
+property-model prediction is used within each cross-validation fold. The third
+is a combined model estimated jointly from property sales and lot sales. The
+model distinguishes the two sale types through a type effect and a
+type-specific spatial adjustment.
 
-if (load) {
-  
-  models_direct <- readRDS("saved_files/models_direct.rds")
-  models_standard_property <- readRDS("saved_files/models_standard_property.rds")
-  models_combined <- readRDS("saved_files/models_combined.rds")
-  
-} else {
-  
-  # -------------------------
-  # 1. Direct lot model
-  # -------------------------
-  
-  fit_direct_fold <- function(i,
-                              data,
-                              k_spatial,
-                              k_other = k_other,
-                              checkpoint_prefix = "direct_lot",
-                              save_checkpoint = TRUE) {
-    
-    training_subset <- data %>% filter(validation_set != i)
-    
-    model <- bam(sales_price ~ s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-                               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
-                               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-                               s(coast_distance, k = k_other, pc = 1500) +
-                               s(lake_distance, k = k_other, pc = 500) +
-                               s(stream_distance, k = k_other, pc = 1000) +
-                               s(road_distance, k = k_other, pc = 2000) +
-                               s(highway_distance, k = k_other, pc = 2000) +
-                               s(train_station_distance, k = k_other, pc = 2000) +
-                               s(railway_distance, k = k_other, pc = 1000) +
-                               s(windturbine_distance, k = k_other, pc = 3000) +
-                               s(ocean_view, k = k_other, pc = 0) +
-                               s(lake_view, k = k_other, pc = 0) +
-                               s(forest_size, k = k_other, pc = 0),
-                data = training_subset,
-                chunk.size = nrow(training_subset),
-                family = tw(link = log),
-                method = "fREML")
-    
-    if (save_checkpoint) {
-      
-      filename <- sprintf("%s_fold%d_kspatial%d_kother%d.rds",
-                          checkpoint_prefix,
-                          i,
-                          k_spatial,
-                          k_other)
-      
-      saveRDS(model, file = file.path("checkpoints", filename))
-      
-    }
-    
-    model
-  }
-  
-  # -------------------------
-  # 2. Standard-property model
-  # -------------------------
-  
-  fit_standard_property_fold <- function(i, 
-                                         data, 
-                                         k_spatial, 
-                                         k_standard_property = 10, 
-                                         checkpoint_prefix = "standard_property", 
-                                         save_checkpoint = TRUE) {
-    
-    training_subset <- data %>% filter(validation_set != i)
-    
-    standard_property_var <- paste0("standard_property_value_Model", i)
-    
-    formula_standard_property <- as.formula(paste0("sales_price ~ ",
-                                                   "s(", standard_property_var, ", k = ", k_standard_property, ") + ",
-                                                   "s(lot_size, k = 6, pc = 800) + ",
-                                                   "s(maximum_coverage_percentage, k = 3, pc = 30) + ",
-                                                   "s(number_of_divisions, k = 3, pc = 1) + ",
-                                                   "s(coordinate_east, coordinate_north, ",
-                                                   "k = ", k_spatial,
-                                                   ", pc = c(697000, 6150000))"))
-    
-    model <- bam(formula_standard_property,
-                 data = training_subset,
-                 chunk.size = nrow(training_subset),
-                 family = tw(link = log),
-                 method = "fREML")
-    
-    if (save_checkpoint) {
-      
-      filename <- sprintf("%s_fold%d_kspatial%d_kstandard%d.rds",
-                          checkpoint_prefix,
-                          i,
-                          k_spatial,
-                          k_standard_property)
-      
-      saveRDS(model, file = file.path("checkpoints", filename))
-    }
-    
-    model
-  }
-  
-  # -------------------------
-  # 3. Combined model
-  # -------------------------
-  
-  fit_combined_fold <- function(i,
-                                lot_data,
-                                property_data,
-                                k_spatial,
-                                k_other = k_other,
-                                checkpoint_prefix = "combined",
-                                save_checkpoint = TRUE) {
-    
-    lot_training_subset <- lot_data %>% filter(validation_set != i)
-    
-    property_training_subset <- property_data %>% filter(validation_set != i)
-    
-    training_subset <- bind_rows(lot_training_subset, property_training_subset)
-    
-    model <- bam(sales_price ~ s(coordinate_east, coordinate_north, k = k_spatial, pc = c(697000, 6150000)) +
-                               s(coordinate_east, coordinate_north, k = k_spatial, by = type_ordered, pc = c(697000, 6150000)) +
-                               s(sales_date_numeric, k = k_other, by = municipality_type, pc = 2024) +
-                               s(year_built, k = k_other, by = municipality_type, pc = 1970) +
-                               s(year_rebuilt, k = k_other, by = municipality_type, pc = 1970) +
-                               s(living_space, k = k_other, by = municipality_type, pc = 140) +
-                               s(lot_size, k = k_other, by = municipality_type, pc = 800) +
-                               s(coast_distance, k = k_other, pc = 1500) +
-                               s(lake_distance, k = k_other, pc = 500) +
-                               s(stream_distance, k = k_other, pc = 1000) +
-                               s(road_distance, k = k_other, pc = 2000) +
-                               s(highway_distance, k = k_other, pc = 2000) +
-                               s(train_station_distance, k = k_other, pc = 2000) +
-                               s(railway_distance, k = k_other, pc = 1000) +
-                               s(windturbine_distance, k = k_other, pc = 3000) +
-                               s(ocean_view, k = k_other, pc = 0) +
-                               s(lake_view, k = k_other, pc = 0) +
-                               s(forest_size, k = k_other, pc = 0) +
-                               s(number_of_bathrooms, k = 2, by = municipality_type, pc = 1) +
-                               house_type * municipality_type +
-                               roof_type * municipality_type +
-                               wall_type * municipality_type +
-                               heating_type * municipality_type +
-                               type,
-                 data = training_subset,
-                 chunk.size = nrow(training_subset),
-                 family = tw(link = log),
-                 method = "fREML")
-    
-    if (save_checkpoint) {
-      
-      filename <- sprintf("%s_fold%d_kspatial%d_kother%d.rds",
-                          checkpoint_prefix,
-                          i,
-                          k_spatial,
-                          k_other)
-      
-      saveRDS(model, file = file.path("checkpoints", filename))
-    }
-    
-    model
-  }
-  
-  # -------------------------
-  # 4. Shared ensemble helper
-  # -------------------------
-  
-  fit_model_ensemble <- function(fit_fun,
-                                 N,
-                                 checkpoint_prefix,
-                                 ...) {
-    
-    models <- future_lapply(seq_len(N), function(i) {
-      
-      message("Fitting ", checkpoint_prefix, ", fold ", i, " of ", N, " ...")
-      
-      fit_fun(i = i, checkpoint_prefix = checkpoint_prefix, ...)
-      
-    })
-    
-    names(models) <- paste0("Model", seq_len(N))
-    
-    models
-  }
-  
-  # -------------------------
-  # 5. Fit model ensembles
-  # -------------------------
-  
-  models_direct <- fit_model_ensemble(fit_fun = fit_direct_fold,
-                                      N = N,
-                                      checkpoint_prefix = "direct_lot",
-                                      data = dataset_lot_sales_cv_standardized,
-                                      k_spatial = k_spatial,
-                                      k_other = k_other)
-  
-  models_standard_property <- fit_model_ensemble(fit_fun = fit_standard_property_fold,
-                                                 N = N,
-                                                 checkpoint_prefix = "standard_property",
-                                                 data = dataset_lot_sales_cv_standardized,
-                                                 k_spatial = k_spatial,
-                                                 k_standard_property = 10)
-  
-  models_combined <- fit_model_ensemble(fit_fun = fit_combined_fold,
-                                        N = N,
-                                        checkpoint_prefix = "combined",
-                                        lot_data = dataset_lot_sales_cv_standardized,
-                                        property_data = dataset_property_sales_cv,
-                                        k_spatial = k_spatial,
-                                        k_other = k_other)
-  
-  # -------------------------
-  # 6. Save complete ensembles
-  # -------------------------
-  
-  saveRDS(models_direct, "saved_files/models_direct.rds")
-  saveRDS(models_standard_property, "saved_files/models_standard_property.rds")
-  saveRDS(models_combined, "saved_files/models_combined.rds")
+As in the property-value analysis, one model is fitted for each cross-validation
+fold using the remaining $N-1$ folds as the training sample. The complete
+training sample is processed in a single bam() chunk to reduce numerical
+variation associated with chunk-wise updating.
+
+
+#### Direct lot model
+
+```{r Direct lot model specification, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+
+make_direct_formula <- function(k_spatial, k_other, ref) {
+
+  as.formula(paste0("sales_price ~ ",
+                    "s(coordinate_east, coordinate_north, k = ", k_spatial,  ", pc = c(", ref[["coordinate_east"]], ", ", ref[["coordinate_north"]], ")) + ",
+                    "s(sales_date_numeric, k = ", k_other, ", pc = ", ref[["sales_date_numeric"]], ") + ",
+                    "s(lot_size, k = ", k_other, ", pc = ", ref[["lot_size"]], ") + ",
+                    "s(coast_distance, k = ", k_other, ", pc = ", ref[["coast_distance"]], ") + ",
+                    "s(lake_distance, k = ", k_other, ", pc = ", ref[["lake_distance"]], ") + ",
+                    "s(stream_distance, k = ", k_other, ", pc = ", ref[["stream_distance"]], ") + ",
+                    "s(road_distance, k = ", k_other, ", pc = ", ref[["road_distance"]], ") + ",
+                    "s(highway_distance, k = ", k_other, ", pc = ", ref[["highway_distance"]], ") + ",
+                    "s(train_station_distance, k = ", k_other, ", pc = ", ref[["train_station_distance"]], ") + ",
+                    "s(railway_distance, k = ", k_other, ", pc = ", ref[["railway_distance"]], ") + ",
+                    "s(windturbine_distance, k = ", k_other, ", pc = ", ref[["windturbine_distance"]], ") + ",
+                    "s(ocean_view, k = ", k_other, ", pc = ", ref[["ocean_view"]], ") + ",
+                    "s(lake_view, k = ", k_other, ", pc = ", ref[["lake_view"]], ") + ",
+                    "s(forest_size, k = ", k_other, ", pc = ", ref[["forest_size"]], ")"))
   
 }
 
+
+direct_formula <- make_direct_formula(k_spatial = k_spatial, k_other = k_other, ref = reference_values)
+
+```
+
+
+#### Standard-property model
+
+The standard-property model differs from the other specifications because the
+standardized property value is generated by the corresponding fold-specific
+property model. Consequently, a separate formula is constructed for each
+cross-validation fold.
+
+```{r Standard-property model specification, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+
+make_standard_property_formula <- function(i, k_spatial, k_standard_property, ref) {
+
+  standard_property_var <- paste0("standard_property_value_Model", i)
+
+  as.formula(paste0("sales_price ~ ",
+                    "s(", standard_property_var, ", k = ", k_standard_property, ") + ",
+                    "s(lot_size, k = 6, pc = ", ref[["lot_size"]], ") + ",
+                    "s(maximum_coverage_percentage, k = 3, pc = ", ref[["maximum_coverage_percentage"]], ") + ",
+                    "s(number_of_divisions, k = 3, pc = 1) + ",
+                    "s(coordinate_east, coordinate_north, k = ", k_spatial, ", pc = c(", ref[["coordinate_east"]], ", ", ref[["coordinate_north"]], "))"))
+}
+
+
+standard_property_formulas <- map(seq_len(N), ~make_standard_property_formula(i = .x, k_spatial = k_spatial, k_standard_property = 10, ref = reference_values))
+names(standard_property_formulas) <- paste0("Model", seq_len(N))
+
+```
+
+
+#### Combined property and lot model
+
+```{r Combined model specification, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+
+make_combined_formula <- function(k_spatial, k_other, ref) {
+
+  as.formula(paste0("sales_price ~ ", 
+                    "s(coordinate_east, coordinate_north, k = ", k_spatial, ", pc = c(", ref[["coordinate_east"]], ", ", ref[["coordinate_north"]], ")) + ",
+                    "s(coordinate_east, coordinate_north, k = ", k_spatial, ", by = type_ordered, pc = c(", ref[["coordinate_east"]], ", ", ref[["coordinate_north"]], ")) + ",
+                    "s(sales_date_numeric, k = ", k_other, ", by = municipality_type, pc = ", ref[["sales_date_numeric"]], ") + ",
+                    "s(year_built, k = ", k_other, ", by = municipality_type, pc = ", ref[["year_built"]], ") + ",
+                    "s(year_rebuilt, k = ", k_other, ", by = municipality_type, pc = ", ref[["year_rebuilt"]], ") + ",
+                    "s(living_space, k = ", k_other, ", by = municipality_type, pc = ", ref[["living_space"]], ") + ",
+                    "s(lot_size, k = ", k_other, ", by = municipality_type, pc = ", ref[["lot_size"]], ") + ",
+                    "s(coast_distance, k = ", k_other, ", pc = ", ref[["coast_distance"]], ") + ",
+                    "s(lake_distance, k = ", k_other, ", pc = ", ref[["lake_distance"]], ") + ",
+                    "s(stream_distance, k = ", k_other, ", pc = ", ref[["stream_distance"]], ") + ",
+                    "s(road_distance, k = ", k_other, ", pc = ", ref[["road_distance"]], ") + ",
+                    "s(highway_distance, k = ", k_other, ", pc = ", ref[["highway_distance"]], ") + ",
+                    "s(train_station_distance, k = ", k_other, ", pc = ", ref[["train_station_distance"]], ") + ",
+                    "s(railway_distance, k = ", k_other, ", pc = ", ref[["railway_distance"]], ") + ",
+                    "s(windturbine_distance, k = ", k_other, ", pc = ", ref[["windturbine_distance"]], ") + ",
+                    "s(ocean_view, k = ", k_other, ", pc = ", ref[["ocean_view"]], ") + ",
+                    "s(lake_view, k = ", k_other, ", pc = ", ref[["lake_view"]], ") + ",
+                    "s(forest_size, k = ", k_other, ", pc = ", ref[["forest_size"]], ") + ",
+                    "s(number_of_bathrooms, k = 2, by = municipality_type, pc = ", ref[["number_of_bathrooms"]], ") + ",
+                    "house_type * municipality_type + ",
+                    "roof_type * municipality_type + ",
+                    "wall_type * municipality_type + ",
+                    "heating_type * municipality_type + ",
+                    "type"))
+}
+
+
+combined_formula <- make_combined_formula(k_spatial = k_spatial, k_other = k_other, ref = reference_values)
+```
+
+
+#### Model fitting
+
+```{r Lot model fitting, eval=TRUE, echo=TRUE, warning=FALSE, results='hide'}
+
+# ------------------------------------------------------------------------------
+# Fit ensemble with fold-specific formulas
+# ------------------------------------------------------------------------------
+
+fit_ensemble_fold_formulas <- function(data, formulas, N, checkpoint_prefix = NULL) {
+
+  models <- future_lapply(seq_len(N), function(i) {fit_fold(i = i, 
+                                                            data = data, 
+                                                            formula = formulas[[i]], 
+                                                            fraction = 1.0, 
+                                                            checkpoint_prefix = checkpoint_prefix)})
+
+  names(models) <- paste0("Model", seq_len(N))
+  
+  models
+  
+}
+
+
+# ------------------------------------------------------------------------------
+# Fit one fold of the combined property and lot model
+# ------------------------------------------------------------------------------
+
+fit_combined_fold <- function(i, lot_data, property_data, formula, checkpoint_prefix = NULL, save_checkpoint = TRUE) {
+
+  training_subset <- bind_rows(lot_data %>% filter(validation_set != i), property_data %>% filter(validation_set != i))
+
+  model <- bam(formula = formula, data = training_subset, chunk.size = nrow(training_subset), family = tw(link = "log"), method = "fREML")
+
+  if (save_checkpoint && !is.null(checkpoint_prefix)) {
+
+    filename <- sprintf("%s_fold%d_frac1.00.rds", checkpoint_prefix, i)
+    saveRDS(model, file = file.path("checkpoints", filename))
+  }
+
+  model
+}
+
+
+# ------------------------------------------------------------------------------
+# Fit all folds of the combined property and lot model
+# ------------------------------------------------------------------------------
+
+fit_combined_ensemble <- function(lot_data, property_data, formula, N, checkpoint_prefix = NULL) {
+
+  models <- future_lapply(seq_len(N),
+    
+  function(i) {
+
+    fit_combined_fold(i = i, 
+                      lot_data = lot_data, 
+                      property_data = property_data, 
+                      formula = formula, 
+                      checkpoint_prefix = checkpoint_prefix)
+  
+    }
+  )
+
+  names(models) <- paste0("Model", seq_len(N))
+
+  models
+}
+
+
+# ------------------------------------------------------------------------------
+# Fit or load models
+# ------------------------------------------------------------------------------
+
+if (load) {
+
+  models_direct <- readRDS("saved_files/models_direct.rds")
+  models_standard_property <- readRDS("saved_files/models_standard_property.rds")
+  models_combined <- readRDS("saved_files/models_combined.rds")
+
+} else {
+
+  # Direct lot model
+  models_direct <- fit_ensemble(data = dataset_lot_sales_cv_standardized, 
+                                formula = direct_formula, 
+                                N = N, 
+                                fraction = 1.0, 
+                                checkpoint_prefix = "direct_lot")
+
+  saveRDS(models_direct, "saved_files/models_direct.rds")
+
+
+  # Standard-property model
+  models_standard_property <- fit_ensemble_fold_formulas(data = dataset_lot_sales_cv_standardized, 
+                                                         formulas = standard_property_formulas, 
+                                                         N = N, 
+                                                         checkpoint_prefix = "standard_property")
+
+  saveRDS(models_standard_property, "saved_files/models_standard_property.rds")
+
+
+  # Combined property and lot model
+  models_combined <- fit_combined_ensemble(lot_data = dataset_lot_sales_cv_standardized,
+                                           property_data = dataset_property_sales_cv,
+                                           formula = combined_formula,
+                                           N = N,
+                                           checkpoint_prefix = "combined")
+
+  saveRDS(models_combined, "saved_files/models_combined.rds")
+  
+}
 ```
 
 ## 4.3 Partial effects
@@ -4386,9 +4388,7 @@ build_spatial_smooth_plots <- function(models,
 
   plots <- c(plots, list(sd_across_models = plot_sd_across))
 
-  if (!is.null(save_path)) {
-    saveRDS(plots, save_path)
-  }
+  if (!is.null(save_path)) {saveRDS(plots, save_path)}
 
   plots
 }
@@ -5568,7 +5568,7 @@ print(plot_building_value_year_built)
 
 
 
-```{r Plot distributions property building and lot values, eval=FALSE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
+```{r Plot distributions property building and lot values, eval=TRUE, echo=TRUE, warning=FALSE, results = 'hide', fig.width=20, fig.height=30}
 
 # -------------------------
 # Combined density figure
@@ -5866,7 +5866,7 @@ if (load) {
 ## 4.8 Illustrative valuations
 The code below performs valuations using the combined model framework on a set of simplified, fictitious properties, which are described in the main paper. 
 
-```{r Model interpretation, eval=FALSE, echo=TRUE, warning=FALSE}
+```{r Model interpretation, eval=TRUE, echo=TRUE, warning=FALSE}
 
 make_interpretation_results <- function(model, model_name) {
   
