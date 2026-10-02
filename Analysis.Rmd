@@ -4288,15 +4288,9 @@ plot_model_terms_from_grid <- function(
 ) {
 
   plot_effect <- ggplot(grid) +
-                 geom_tile(aes(coordinate_east, coordinate_north,
-                           fill = effect_coordinates)) +
-                 scale_fill_scico(palette = "vik",
-                                  name = paste("Partial effect\n", model_name),
-                                  na.value = "white",
-                                  limits = effect_range) +
-                 geom_contour(aes(coordinate_east, coordinate_north, z = as.numeric(!ocean)),
-                              color = "black",
-                              size = 0.4) +
+                 geom_tile(aes(coordinate_east, coordinate_north, fill = effect_coordinates)) +
+                 scale_fill_scico(palette = "vik", name = paste("Partial effect\n", model_name), na.value = "white", limits = effect_range) +
+                 geom_contour(aes(coordinate_east, coordinate_north, z = as.numeric(!ocean)), color = "black", size = 0.4) +
                  coord_fixed() +
                  labs(title = smooth_name, x = "", y = "") +
                  theme_void() +
@@ -4307,15 +4301,9 @@ plot_model_terms_from_grid <- function(
                        legend.title.align = 0.5)
 
   plot_se <- ggplot(grid) +
-             geom_tile(aes(coordinate_east, coordinate_north,
-                       fill = se_coordinates)) +
-             scale_fill_scico(palette = "vik",
-                              name = bquote(sigma[.(model_name)]),
-                              na.value = "white",
-                              limits = se_range) +
-             geom_contour(aes(coordinate_east, coordinate_north, z = as.numeric(!ocean)),
-                          color = "black",
-                          size = 0.4) +
+             geom_tile(aes(coordinate_east, coordinate_north, fill = se_coordinates)) +
+             scale_fill_scico(palette = "vik", name = bquote(sigma[.(model_name)]), na.value = "white", limits = se_range) +
+             geom_contour(aes(coordinate_east, coordinate_north, z = as.numeric(!ocean)), color = "black", size = 0.4) +
              coord_fixed() +
              labs(title = paste("SE:", smooth_name), x = "", y = "") +
              theme_void() +
@@ -4481,8 +4469,7 @@ make_standard_property_smooth_plot <- function(models, model_set_name) {
       y = .estimate,
       linetype = Model)) +
   geom_ribbon(data = subset(combined_df, Model == "Model 1"),
-              aes(ymin = .estimate - 1.96 * .se,
-                  ymax = .estimate + 1.96 * .se),
+              aes(ymin = .estimate - 1.96 * .se, ymax = .estimate + 1.96 * .se),
               alpha = 0.15,
               color = NA) +
   geom_line(linewidth = 1, color = "black") +
@@ -4535,9 +4522,7 @@ make_single_smooth_plot <- function(models, model_set_name, var, label) {
                     linetype = Model,
                     group = interaction(Model, .data[[by_var_name]]))) +
         geom_ribbon(data = subset(combined_df, Model == "Model 1"),
-        aes(ymin = .estimate - 1.96 * .se,
-            ymax = .estimate + 1.96 * .se,
-            fill = .data[[by_var_name]]),
+        aes(ymin = .estimate - 1.96 * .se, ymax = .estimate + 1.96 * .se, fill = .data[[by_var_name]]),
         alpha = 0.15,
         color = NA) +
         geom_line(linewidth = 1) +
@@ -4786,8 +4771,7 @@ The code below extracts various residual types for each type of lot model and ca
 # 1. Residuals for lot-sales evaluation
 # -------------------------
 
-get_lot_residuals <- function(models, dataset_lot_sales_cv, model_approach,
-                              fold_from_name = TRUE) {
+get_lot_residuals <- function(models, dataset_lot_sales_cv, model_approach, fold_from_name = TRUE) {
   
   residual_list <- future_lapply(seq_along(models), function(i) {
     
